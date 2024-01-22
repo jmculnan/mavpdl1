@@ -6,3 +6,7 @@ venv/
 
 # egg-info
 src/mavpdl1.egg-info
+
+# pycharm
+.idea/
+.DS_Store
