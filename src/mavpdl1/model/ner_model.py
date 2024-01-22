@@ -16,6 +16,10 @@ class BERTNER:
         # resize the model bc we added emebeddings to the tokenizer
         self.model.resize_token_embeddings(len(tokenizer))
 
+        # put device on gpu or cpu
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model.to(device)
+
         # set tokenizer
         self.tokenizer = tokenizer
 

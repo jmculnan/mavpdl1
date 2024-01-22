@@ -10,6 +10,7 @@ def get_tokenizer(tokenizer_model="allenai/scibert_scivocab_uncased"):
     """
     Modified from Kyle code
     Can add params if multiple tokenizers allowed
+    :param tokenizer_model: string name of model to use
     :return: A tokenizer with relevant tokens added
     """
     tokenizer = BertTokenizerFast.from_pretrained(tokenizer_model)
