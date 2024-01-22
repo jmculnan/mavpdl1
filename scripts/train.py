@@ -5,7 +5,7 @@ import evaluate
 
 seqeval = evaluate.load("seqeval")
 
-from transformers import Trainer
+from transformers import Trainer, DataCollatorForTokenClassification
 from datasets import Dataset
 
 from sklearn.preprocessing import LabelEncoder
@@ -28,7 +28,7 @@ from mavpdl1.utils.utils import (
     id_labeled_items,
     get_from_indexes,
 )
-from mavpdl1.data_examination.data_munging import PDL1Data
+from mavpdl1.preprocessing.data_preprocessing import PDL1Data
 from mavpdl1.model.ner_model import BERTNER
 
 
@@ -123,11 +123,15 @@ if __name__ == "__main__":
         # PART 1
         ner = BERTNER(config, label_enc_results, tokenizer)
 
+        # add data collator
+        data_collator = DataCollatorForTokenClassification(tokenizer)
+
         # set up trainer
         trainer = Trainer(
             model=ner.model,
             args=ner.training_args,
             train_dataset=train_dataset,
+            data_collator=data_collator,
             eval_dataset=val_dataset,
             compute_metrics=ner.compute_metrics,
         )
