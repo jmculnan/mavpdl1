@@ -1,0 +1,14 @@
+[build-system]
+requires = [
+    "setuptools>=49",
+    "wheel"
+]
+
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mavpdl1"
+version = "1.0"
+
+[tool.setuptools.packages.find]
+where = ["src"]
