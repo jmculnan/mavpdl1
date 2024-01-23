@@ -178,13 +178,14 @@ if __name__ == "__main__":
         :param df:
         :return:
         """
+        pass
 
 
     # vectorize gold labels
 
-
+    # todo: update these as you contine
     train_dataset = Dataset.from_dict(
-        {"texts": , "labels": y_train, "TIUDocumentSID": }
+        {"texts": None, "labels": y_train, "TIUDocumentSID": None}
     )
     train_dataset = train_dataset.map(tokize, batched=True)
 
