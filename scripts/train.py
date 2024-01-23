@@ -4,7 +4,7 @@
 import evaluate
 import numpy as np
 
-from transformers import Trainer, DataCollatorForTokenClassification
+from transformers import Trainer, DataCollatorForTokenClassification, DataCollatorWithPadding
 from datasets import Dataset
 
 from sklearn.preprocessing import LabelEncoder
@@ -48,7 +48,7 @@ if __name__ == "__main__":
     # # label set for vendor and unit
     label_set_vendor_unit = np.concatenate((all_data["TEST"].dropna().unique(),
                                             all_data["UNIT"].dropna().unique(),
-                                            np.ndarray("None")))
+                                            np.array(["Unk_test", "Unk_unit"])))
 
     # encoders for the labels
     label_enc_results = LabelEncoder().fit(label_set_results)
@@ -126,7 +126,7 @@ if __name__ == "__main__":
         ner = BERTNER(config, label_enc_results, tokenizer)
 
         # add data collator
-        data_collator = DataCollatorForTokenClassification(tokenizer)
+        data_collator = DataCollatorForTokenClassification(tokenizer, padding=True, return_tensors="pt")
 
         # set up trainer
         trainer = Trainer(
@@ -163,15 +163,51 @@ if __name__ == "__main__":
 
     # get the labeled data for train and dev partition
     # test partition already generated above
-    train_ids, val_ids = train_test_split(ids_train_full, test_size=0.15, random_state=config.seed)
+    train_ids, val_ids = train_test_split(ids_train_full, test_size=0.25, random_state=config.seed)
 
     # get train data using train_ids
+    # set of document SIDs was passed to split earlier
     train_df = all_data[all_data["TIUDocumentSID"].isin(train_ids)]
     val_df = all_data[all_data["TIUDocumentSID"].isin(val_ids)]
 
+    def condense_df(df):
+        """
+        Condense a df where multiple rows have the same input text
+        But different gold labels
+        Concatenate the gold labels
+        :param df:
+        :return:
+        """
 
 
+    # vectorize gold labels
 
+
+    train_dataset = Dataset.from_dict(
+        {"texts": , "labels": y_train, "TIUDocumentSID": }
+    )
+    train_dataset = train_dataset.map(tokize, batched=True)
+
+    val_dataset = Dataset.from_dict(
+        {"texts": X_val, "labels": y_val, "TIUDocumentSID": ids_val}
+    )
+    val_dataset = val_dataset.map(tokize, batched=True)
+
+    # convert to dataset
+
+    # set training args
+
+    # instantiate trainer
+    classification_trainer = Trainer(
+        model=classifier.model,
+        args=classifier.training_args,
+        train_dataset=train_dataset,
+        eval_dataset=val_dataset,
+        compute_metrics=classifier.multilabel_compute_metrics,
+    )
+
+    # train the model
+    classification_metrics = classification_trainer.train()
 
     # SAVE RESULTS
     # ---------------------------------------------------------

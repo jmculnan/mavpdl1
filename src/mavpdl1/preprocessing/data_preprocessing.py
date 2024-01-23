@@ -35,6 +35,9 @@ class PDL1Data:
         """
         data = pd.read_csv(self.path)
 
+        # todo: this depends on the type of task setup we have for classification
+        # if we use multilabel, then this is appropriate
+        # if not,
         data[["TEST", "UNIT"]] = data.apply(
             lambda x: convert_label(x["LABELS"]), axis=1, result_type="expand"
         )
@@ -42,17 +45,32 @@ class PDL1Data:
         # get subset of data
         # we only need start, end, annotation_index,
         # test, unit, annotation, and candidate
-        data = data[
-            [
-                "START",
-                "END",
-                "ANNOTATION_INDEX",
-                "ANNOTATION",
-                "TEST",
-                "UNIT",
-                "CANDIDATE",
+        try:
+            data = data[
+                [
+                    "START",
+                    "END",
+                    "ANNOTATION_INDEX",
+                    "ANNOTATION",
+                    "TEST",
+                    "UNIT",
+                    "CANDIDATE",
+                    "TIUDocumentSID"
+                ]
             ]
-        ]
+        # if the TIUDocumentSID is not present
+        except ValueError:
+            data = data[
+                [
+                    "START",
+                    "END",
+                    "ANNOTATION_INDEX",
+                    "ANNOTATION",
+                    "TEST",
+                    "UNIT",
+                    "CANDIDATE"
+                ]
+            ]
 
         return data
 
