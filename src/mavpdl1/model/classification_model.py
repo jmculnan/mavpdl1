@@ -2,13 +2,16 @@
 import torch
 import torch.nn as nn
 
-from sklearn.metrics import precision_recall_fscore_support
+from sklearn.metrics import precision_recall_fscore_support, accuracy_score
 from transformers import BertModel, TrainingArguments
 
 
 class BERTTextClassifier:
+    """
+    A BERT-based document-level classifier
+    """
     def __init__(self, config, label_encoder, tokenizer, model=None):
-        # we want to be able to provide a model we've been training with
+        # we may want to be able to provide a model we've been training with
         # as part of a longer training procedure
         if model:
             self.model = model
@@ -16,7 +19,7 @@ class BERTTextClassifier:
             self.model = BertModel.from_pretrained(
                 config.model,
                 num_labels=len(label_encoder.classes_),
-                problem_type="multilabel",
+                problem_type="multi_label_classification",
             )
 
         # set tokenizer
@@ -42,25 +45,42 @@ class BERTTextClassifier:
             use_cpu=config.use_cpu,
         )
 
-    def compute_metrics(self, pred_targets):
+    def multilabel_compute_metrics(self, pred_targets):
         """
         :param pred_targets: An instance of class transformers.EvalPrediction;
             consists of an np.ndarray of predictions, an np.ndarray of targets,
             and an optional np.ndarray of inputs
         :return: precision, recall, f1, accuracy
+
+        todo: the metrics used depend on task formulation
+            -- multitask (ID vendor + unit separately, 1 item per example)
+            -- multitask, multilabel (vendor + unit separately, 1+ per example)
+            -- single-task, multilabel (is this ever the case?
+               only if vendor_unit is being preserved as gold label type)
         """
-        preds, targets = pred_targets
+        predictions, targets = pred_targets
+
+        # first, apply sigmoid on predictions which are of shape (batch_size, num_labels)
+        sigmoid = torch.nn.Sigmoid()
+        probs = sigmoid(torch.Tensor(predictions))
+        # next, use threshold to turn them into integer predictions
+        preds = np.zeros(probs.shape)
+        # use 0.5 as a threshold for predictions
+        preds[np.where(probs >= 0.5)] = 1
+
         # convert targets to ints
         targets = [list(map(int, label)) for label in targets]
-        # get max prediction over classes for each prediction
-        preds = torch.argmax(torch.from_numpy(preds), dim=2)
 
         # calculate precision, recall, f1, support
-        results = precision_recall_fscore_support(targets, preds)
+        # selected micro f1 for imbalanced classes
+        # can change as needed
+        results = precision_recall_fscore_support(targets, preds, average='micro')
+
+        accuracy = accuracy_score(targets, preds)
 
         return {
-            "precision": results["overall_precision"],
-            "recall": results["overall_recall"],
-            "f1": results["overall_f1"],
-            "accuracy": results["overall_accuracy"],
+            "precision": results[0],
+            "recall": results[1],
+            "f1": results[2],
+            "accuracy": accuracy,
         }

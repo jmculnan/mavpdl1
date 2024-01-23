@@ -2,8 +2,7 @@
 
 # IMPORT STATEMENTS
 import evaluate
-
-seqeval = evaluate.load("seqeval")
+import numpy as np
 
 from transformers import Trainer, DataCollatorForTokenClassification
 from datasets import Dataset
@@ -30,6 +29,10 @@ from mavpdl1.utils.utils import (
 )
 from mavpdl1.preprocessing.data_preprocessing import PDL1Data
 from mavpdl1.model.ner_model import BERTNER
+from mavpdl1.model.classification_model import BERTTextClassifier
+
+# load seqeval in evaluate
+seqeval = evaluate.load("seqeval")
 
 
 if __name__ == "__main__":
@@ -42,15 +45,14 @@ if __name__ == "__main__":
     # get label sets
     # label set for test results is just O, B-result, I-result
     label_set_results = ["O", "B-result", "I-result"]
-    # label set for vendor
-    label_set_vendor = all_data["TEST"].dropna().unique()
-    # label set for unit
-    label_set_unit = all_data["UNIT"].dropna().unique()
+    # # label set for vendor and unit
+    label_set_vendor_unit = np.concatenate((all_data["TEST"].dropna().unique(),
+                                            all_data["UNIT"].dropna().unique(),
+                                            np.ndarray("None")))
 
     # encoders for the labels
     label_enc_results = LabelEncoder().fit(label_set_results)
-    label_enc_vendor = LabelEncoder().fit(label_set_vendor)
-    label_enc_unit = LabelEncoder().fit(label_set_unit)
+    label_enc_vendor_unit = LabelEncoder().fit(label_set_vendor_unit)
 
     # get tokenizer
     tokenizer = get_tokenizer(config.model)
@@ -138,9 +140,10 @@ if __name__ == "__main__":
 
         # train the model
         metrics = trainer.train()
-        y_pred = trainer.predict(val_dataset)
 
-        test_metrics = ner.compute_metrics((y_pred.predictions, val_dataset["labels"]))
+        # get the best predictions from the model
+        # to select data inputs for classification task
+        y_pred = trainer.predict(val_dataset)
 
         # IDENTIFY ALL SAMPLES THAT WILL MOVE ON TO BE USED AS INPUT WITH NEXT MODEL
         # define a second computation
@@ -151,13 +154,24 @@ if __name__ == "__main__":
         )
         all_labeled.extend(all_labeled_ids)
 
-        # WE WILL WANT TO CHANGE THE MODEL TO GET ONLY ITEMS WITH
-        # PREDICTED GOLD LABELS
-        # WE NEED TO HAVE ADDITIONAL
-
-        print(test_metrics)
-
     print(all_labeled)
+
+    # PART 2
+    # USE THE IDENTIFIED PD-L1 INPUTS TO TRAIN A CLASSIFIER TO GET
+    # VENDOR AND UNIT INFORMATION FROM THESE SAMPLES, WHEN AVAILABLE
+    classifier = BERTTextClassifier(config, label_set_vendor_unit, tokenizer)
+
+    # get the labeled data for train and dev partition
+    # test partition already generated above
+    train_ids, val_ids = train_test_split(ids_train_full, test_size=0.15, random_state=config.seed)
+
+    # get train data using train_ids
+    train_df = all_data[all_data["TIUDocumentSID"].isin(train_ids)]
+    val_df = all_data[all_data["TIUDocumentSID"].isin(val_ids)]
+
+
+
+
 
     # SAVE RESULTS
     # ---------------------------------------------------------

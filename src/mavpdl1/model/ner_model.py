@@ -9,6 +9,9 @@ seqeval = evaluate.load("seqeval")
 
 
 class BERTNER:
+    """
+    A BERT-based model for NER classification
+    """
     def __init__(self, config, label_encoder, tokenizer):
         self.model = BertForTokenClassification.from_pretrained(
             config.model, num_labels=len(label_encoder.classes_)
