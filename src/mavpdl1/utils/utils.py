@@ -2,6 +2,7 @@
 import torch
 import uuid
 import numpy as np
+import pandas as pd
 
 from transformers import BertTokenizerFast
 
@@ -130,6 +131,51 @@ def tokenize_label_data(tokenizer, data_frame, label_encoder):
             all_sids.append(str(uuid.uuid4()))
 
     return all_texts, all_labels, all_sids
+
+
+def condense_df(df, label_encoder):
+    """
+    Condense a df where multiple rows have the same input text
+    But different gold labels
+    Concatenate the gold labels
+    :param df: Data df
+    :param label_encoder: LabelEncoder for TEST UNIT group
+    :return:
+    todo: if task formulation changes, we need this to be different
+        as we'll have separate encoders for unit and test
+    """
+    # convert nan values to unk_test
+    df["TEST"] = df["TEST"].apply(lambda x: "UNK_TEST" if pd.isnull(x) else x)
+    # convert nan values to unk_unit
+    df["UNIT"] = df["UNIT"].apply(lambda x: "UNK_UNIT" if pd.isnull(x) else x)
+
+    listed = ['TEST', 'UNIT']
+    condensed = df.groupby(['TIUDocumentSID', 'CANDIDATE'])[listed].agg(set).reset_index()
+
+    condensed['GOLD'] = condensed.apply(lambda x: x['TEST'].union(x['UNIT']), axis=1)
+    condensed['GOLD'] = condensed['GOLD'].apply(lambda x: vectorize_gold(x, label_encoder))
+
+    return condensed
+
+
+# vectorize gold labels
+def vectorize_gold(gold_labels, label_encoder):
+    """
+    Vectorize gold labels for use in the multilabel classification model
+    :param gold_labels: The set of gold labels for an item
+    :param label_encoder: A label encoder
+    :return:
+    """
+    # convert class str to int
+    new_gold = label_encoder.transform(list(gold_labels)).tolist()
+    # create vector of 0s
+    gold_vec = [0] * len(label_encoder.classes_)
+
+    # mentioned classes are 1, rest are 0
+    for item in new_gold:
+        gold_vec[item] = 1
+
+    return gold_vec
 
 
 def id_labeled_items(predictions, sids, o_class):

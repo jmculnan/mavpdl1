@@ -26,6 +26,7 @@ from mavpdl1.utils.utils import (
     tokenize_label_data,
     id_labeled_items,
     get_from_indexes,
+    condense_df
 )
 from mavpdl1.preprocessing.data_preprocessing import PDL1Data
 from mavpdl1.model.ner_model import BERTNER
@@ -48,7 +49,7 @@ if __name__ == "__main__":
     # # label set for vendor and unit
     label_set_vendor_unit = np.concatenate((all_data["TEST"].dropna().unique(),
                                             all_data["UNIT"].dropna().unique(),
-                                            np.array(["Unk_test", "Unk_unit"])))
+                                            np.array(["UNK_TEST", "UNK_UNIT"])))
 
     # encoders for the labels
     label_enc_results = LabelEncoder().fit(label_set_results)
@@ -168,35 +169,25 @@ if __name__ == "__main__":
     # get train data using train_ids
     # set of document SIDs was passed to split earlier
     train_df = all_data[all_data["TIUDocumentSID"].isin(train_ids)]
+    train_df = condense_df(train_df, label_enc_vendor_unit)
+
     val_df = all_data[all_data["TIUDocumentSID"].isin(val_ids)]
+    val_df = condense_df(val_df, label_enc_vendor_unit)
 
-    def condense_df(df):
-        """
-        Condense a df where multiple rows have the same input text
-        But different gold labels
-        Concatenate the gold labels
-        :param df:
-        :return:
-        """
-        pass
-
-
-    # vectorize gold labels
-
-    # todo: update these as you contine
+    # convert to dataset
     train_dataset = Dataset.from_dict(
-        {"texts": None, "labels": y_train, "TIUDocumentSID": None}
+        {"texts": train_df['CANDIDATE'].tolist(),
+         "labels": train_df['GOLD'].tolist(),
+         "TIUDocumentSID": train_df['TIUDocumentSID'].tolist()}
     )
     train_dataset = train_dataset.map(tokize, batched=True)
 
     val_dataset = Dataset.from_dict(
-        {"texts": X_val, "labels": y_val, "TIUDocumentSID": ids_val}
+        {"texts": val_df['CANDIDATE'].tolist(),
+         "labels": val_df['GOLD'].tolist(),
+         "TIUDocumentSID": val_df['TIUDocumentSID'].tolist()}
     )
     val_dataset = val_dataset.map(tokize, batched=True)
-
-    # convert to dataset
-
-    # set training args
 
     # instantiate trainer
     classification_trainer = Trainer(
@@ -209,6 +200,11 @@ if __name__ == "__main__":
 
     # train the model
     classification_metrics = classification_trainer.train()
+
+    y_pred = classification_trainer.predict(val_dataset)
+
+
+
 
     # SAVE RESULTS
     # ---------------------------------------------------------
