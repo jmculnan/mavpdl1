@@ -21,6 +21,12 @@ class BERTTextClassifier:
                 num_labels=len(label_encoder.classes_),
                 problem_type="multi_label_classification",
             )
+        # resize the model bc we added emebeddings to the tokenizer
+        self.model.resize_token_embeddings(len(tokenizer))
+
+        # put device on gpu or cpu
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model.to(device)
 
         # set tokenizer
         self.tokenizer = tokenizer
@@ -30,7 +36,7 @@ class BERTTextClassifier:
 
         # set training args
         self.training_args = TrainingArguments(
-            output_dir=config.savepath,
+            output_dir=f"{config.savepath}/multilabel_classifier",
             num_train_epochs=config.num_epochs,
             per_device_train_batch_size=config.per_device_train_batch_size,
             per_device_eval_batch_size=config.per_device_eval_batch_size,

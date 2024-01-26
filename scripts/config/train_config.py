@@ -55,6 +55,7 @@ per_device_train_batch_size = 4  # 32
 per_device_eval_batch_size = 64
 evaluation_strategy = "epoch"
 save_strategy = "epoch"
+total_saved_epochs = 10
 load_best_model_at_end = True
 warmup_steps = 500
 logging_dir = 'output/logs'

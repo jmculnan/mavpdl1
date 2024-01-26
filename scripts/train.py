@@ -129,6 +129,8 @@ if __name__ == "__main__":
         # add data collator
         data_collator = DataCollatorForTokenClassification(tokenizer, padding=True, return_tensors="pt")
 
+        ner.update_save_path(f"{config.savepath}/fold_{i}")
+
         # set up trainer
         trainer = Trainer(
             model=ner.model,
@@ -160,7 +162,7 @@ if __name__ == "__main__":
     # PART 2
     # USE THE IDENTIFIED PD-L1 INPUTS TO TRAIN A CLASSIFIER TO GET
     # VENDOR AND UNIT INFORMATION FROM THESE SAMPLES, WHEN AVAILABLE
-    classifier = BERTTextClassifier(config, label_set_vendor_unit, tokenizer)
+    classifier = BERTTextClassifier(config, label_enc_vendor_unit, tokenizer)
 
     # get the labeled data for train and dev partition
     # test partition already generated above
