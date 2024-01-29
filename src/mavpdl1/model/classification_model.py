@@ -1,9 +1,10 @@
 # a transformer model for classification at the text level
 import torch
 import torch.nn as nn
+import numpy as np
 
 from sklearn.metrics import precision_recall_fscore_support, accuracy_score
-from transformers import BertModel, TrainingArguments
+from transformers import BertModel, TrainingArguments, BertForSequenceClassification
 
 
 class BERTTextClassifier:
@@ -16,7 +17,7 @@ class BERTTextClassifier:
         if model:
             self.model = model
         else:
-            self.model = BertModel.from_pretrained(
+            self.model = BertForSequenceClassification.from_pretrained(
                 config.model,
                 num_labels=len(label_encoder.classes_),
                 problem_type="multi_label_classification",

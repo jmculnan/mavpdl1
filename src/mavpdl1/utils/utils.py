@@ -3,8 +3,9 @@ import torch
 import uuid
 import numpy as np
 import pandas as pd
+from copy import deepcopy
 
-from transformers import BertTokenizerFast
+from transformers import BertTokenizerFast, TrainerCallback
 
 
 def get_tokenizer(tokenizer_model="allenai/scibert_scivocab_uncased"):
@@ -68,6 +69,23 @@ def create_labels(text, tokens, start_idx, end_idx, labels, label):
             else:
                 labels[i] = label_encoder.transform(["B-" + label])[0]
     return text, labels
+
+
+class CustomCallback(TrainerCallback):
+    """
+    To get predictions on train set at end of each epoch
+    In order to print training curve + loss over epochs
+    https://discuss.huggingface.co/t/metrics-for-training-set-in-trainer/2461/5
+    """
+    def __init__(self, trainer) -> None:
+        super().__init__()
+        self._trainer = trainer
+
+    def on_epoch_end(self, args, state, control, **kwargs):
+        if control.should_evaluate:
+            control_copy = deepcopy(control)
+            self._trainer.evaluate(eval_dataset=self._trainer.train_dataset, metric_key_prefix="train")
+            return control_copy
 
 
 def tokenize_label_data(tokenizer, data_frame, label_encoder):
