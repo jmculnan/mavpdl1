@@ -9,6 +9,9 @@ seqeval = evaluate.load("seqeval")
 
 
 class BERTNER:
+    """
+    A BERT-based model for NER classification
+    """
     def __init__(self, config, label_encoder, tokenizer):
         self.model = BertForTokenClassification.from_pretrained(
             config.model, num_labels=len(label_encoder.classes_)
@@ -26,6 +29,9 @@ class BERTNER:
         # set label encoder
         self.label_encoder = label_encoder
 
+        # set config
+        self.config = config
+
         # set training args
         self.training_args = TrainingArguments(
             output_dir=config.savepath,
@@ -34,6 +40,7 @@ class BERTNER:
             per_device_eval_batch_size=config.per_device_eval_batch_size,
             evaluation_strategy=config.evaluation_strategy,
             save_strategy=config.save_strategy,
+            save_total_limit=config.total_saved_epochs,
             load_best_model_at_end=config.load_best_model_at_end,
             warmup_steps=config.warmup_steps,
             logging_dir=config.logging_dir,
@@ -72,3 +79,21 @@ class BERTNER:
             "f1": results["overall_f1"],
             "accuracy": results["overall_accuracy"],
         }
+
+    def update_save_path(self, new_path):
+        self.training_args = TrainingArguments(
+            output_dir=new_path,
+            num_train_epochs=self.config.num_epochs,
+            per_device_train_batch_size=self.config.per_device_train_batch_size,
+            per_device_eval_batch_size=self.config.per_device_eval_batch_size,
+            evaluation_strategy=self.config.evaluation_strategy,
+            save_strategy=self.config.save_strategy,
+            save_total_limit=self.config.total_saved_epochs,
+            load_best_model_at_end=self.config.load_best_model_at_end,
+            warmup_steps=self.config.warmup_steps,
+            logging_dir=self.config.logging_dir,
+            dataloader_pin_memory=self.config.dataloader_pin_memory,
+            metric_for_best_model=self.config.metric_for_best_model,
+            weight_decay=self.config.weight_decay,
+            use_cpu=self.config.use_cpu,
+        )

@@ -21,7 +21,7 @@ experiment_no = "1"
 expname = f"{experiment_no}_{outname}"
 
 # dataset used
-dataset_location = "/Users/jculnan/va_data/pdl1_annotations-100_deidentified.csv"
+dataset_location = "/Users/jculnan/va_data/pdl1_annotations-100_deidentified_fakeuuids.csv"
 # dataset_location = "/Users/jculnan/va_data/pdl1_annotations-10_deidentified.csv"
 # model
 model = "allenai/scibert_scivocab_uncased"
@@ -49,11 +49,13 @@ rootLogger.addHandler(consoleHandler)
 
 
 # model parameters
+# todo: make separate args for NER model and classifier
 num_epochs = 4  # 50
 per_device_train_batch_size = 4  # 32
 per_device_eval_batch_size = 64
 evaluation_strategy = "epoch"
 save_strategy = "epoch"
+total_saved_epochs = 10
 load_best_model_at_end = True
 warmup_steps = 500
 logging_dir = 'output/logs'

@@ -1,23 +1,33 @@
 # a transformer model for classification at the text level
 import torch
 import torch.nn as nn
+import numpy as np
 
-from sklearn.metrics import precision_recall_fscore_support
-from transformers import BertModel, TrainingArguments
+from sklearn.metrics import precision_recall_fscore_support, accuracy_score
+from transformers import BertModel, TrainingArguments, BertForSequenceClassification
 
 
 class BERTTextClassifier:
+    """
+    A BERT-based document-level classifier
+    """
     def __init__(self, config, label_encoder, tokenizer, model=None):
-        # we want to be able to provide a model we've been training with
+        # we may want to be able to provide a model we've been training with
         # as part of a longer training procedure
         if model:
             self.model = model
         else:
-            self.model = BertModel.from_pretrained(
+            self.model = BertForSequenceClassification.from_pretrained(
                 config.model,
                 num_labels=len(label_encoder.classes_),
-                problem_type="multilabel",
+                problem_type="multi_label_classification",
             )
+        # resize the model bc we added emebeddings to the tokenizer
+        self.model.resize_token_embeddings(len(tokenizer))
+
+        # put device on gpu or cpu
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model.to(device)
 
         # set tokenizer
         self.tokenizer = tokenizer
@@ -27,7 +37,7 @@ class BERTTextClassifier:
 
         # set training args
         self.training_args = TrainingArguments(
-            output_dir=config.savepath,
+            output_dir=f"{config.savepath}/multilabel_classifier",
             num_train_epochs=config.num_epochs,
             per_device_train_batch_size=config.per_device_train_batch_size,
             per_device_eval_batch_size=config.per_device_eval_batch_size,
@@ -42,25 +52,42 @@ class BERTTextClassifier:
             use_cpu=config.use_cpu,
         )
 
-    def compute_metrics(self, pred_targets):
+    def multilabel_compute_metrics(self, pred_targets):
         """
         :param pred_targets: An instance of class transformers.EvalPrediction;
             consists of an np.ndarray of predictions, an np.ndarray of targets,
             and an optional np.ndarray of inputs
         :return: precision, recall, f1, accuracy
+
+        todo: the metrics used depend on task formulation
+            -- multitask (ID vendor + unit separately, 1 item per example)
+            -- multitask, multilabel (vendor + unit separately, 1+ per example)
+            -- single-task, multilabel (is this ever the case?
+               only if vendor_unit is being preserved as gold label type)
         """
-        preds, targets = pred_targets
+        predictions, targets = pred_targets
+
+        # first, apply sigmoid on predictions which are of shape (batch_size, num_labels)
+        sigmoid = torch.nn.Sigmoid()
+        probs = sigmoid(torch.Tensor(predictions))
+        # next, use threshold to turn them into integer predictions
+        preds = np.zeros(probs.shape)
+        # use 0.5 as a threshold for predictions
+        preds[np.where(probs >= 0.5)] = 1
+
         # convert targets to ints
         targets = [list(map(int, label)) for label in targets]
-        # get max prediction over classes for each prediction
-        preds = torch.argmax(torch.from_numpy(preds), dim=2)
 
         # calculate precision, recall, f1, support
-        results = precision_recall_fscore_support(targets, preds)
+        # selected micro f1 for imbalanced classes
+        # can change as needed
+        results = precision_recall_fscore_support(targets, preds, average='micro')
+
+        accuracy = accuracy_score(targets, preds)
 
         return {
-            "precision": results["overall_precision"],
-            "recall": results["overall_recall"],
-            "f1": results["overall_f1"],
-            "accuracy": results["overall_accuracy"],
+            "precision": results[0],
+            "recall": results[1],
+            "f1": results[2],
+            "accuracy": accuracy,
         }
