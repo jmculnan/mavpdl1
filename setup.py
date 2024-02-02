@@ -19,5 +19,6 @@ setuptools.setup(
         "seqeval",
         "evaluate",
         "urllib3==1.26.6",
+        '"ray[tune]"'
     ]
 )

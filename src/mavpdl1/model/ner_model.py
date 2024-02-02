@@ -1,5 +1,6 @@
 # a transformer model for IOB NER sequential token classification
 import torch
+import logging
 
 from transformers import BertForTokenClassification, TrainingArguments
 
@@ -44,6 +45,7 @@ class BERTNER:
             load_best_model_at_end=config.load_best_model_at_end,
             warmup_steps=config.warmup_steps,
             logging_dir=config.logging_dir,
+            logging_strategy=config.logging_strategy,
             dataloader_pin_memory=config.dataloader_pin_memory,
             metric_for_best_model=config.metric_for_best_model,
             weight_decay=config.weight_decay,
@@ -72,6 +74,7 @@ class BERTNER:
 
         # get results and return them
         results = seqeval.compute(predictions=true_predictions, references=true_labels)
+        logging.info(results)
 
         return {
             "precision": results["overall_precision"],

@@ -35,6 +35,7 @@ use_stdout = True
 logFormatter = logging.Formatter("%(asctime)s [%(levelname)s]: %(message)s")
 # make a root logger to hold the two others
 rootLogger = logging.getLogger()
+rootLogger.setLevel(logging.INFO)
 # add logger that saves to file
 fileHandler = logging.FileHandler(f"{savepath}/{expname}.log")
 fileHandler.setFormatter(logFormatter)
@@ -59,6 +60,7 @@ total_saved_epochs = 10
 load_best_model_at_end = True
 warmup_steps = 500
 logging_dir = 'output/logs'
+logging_strategy = 'epoch'
 dataloader_pin_memory = False
 metric_for_best_model = 'f1'
 weight_decay = 0.001

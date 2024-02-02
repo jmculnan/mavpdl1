@@ -103,7 +103,7 @@ def tokenize_label_data(tokenizer, data_frame, label_encoder):
     """
     all_texts = []
     all_labels = []
-    all_sids = []  # todo: deidentified data doesn't contain this
+    all_sids = []
 
     for i, row in data_frame.iterrows():
         # check if the row is a second annotation of the same example
@@ -130,7 +130,7 @@ def tokenize_label_data(tokenizer, data_frame, label_encoder):
                 if tokenized[j : j + len(tok_ann)] == tok_ann:
                     labels[j] = label_encoder.transform(["B-result"])
                     if len(tok_ann) > 1:
-                        for k in range(len(tok_ann)):
+                        for k in range(1, len(tok_ann)):
                             labels[j + k] = label_encoder.transform(["I-result"])
                     # we only take the first occurrence of this
                     # issue if we see a number twice but the
