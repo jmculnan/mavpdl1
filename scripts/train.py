@@ -4,7 +4,11 @@
 import evaluate
 import numpy as np
 
-from transformers import Trainer, DataCollatorForTokenClassification, DataCollatorWithPadding
+from transformers import (
+    Trainer,
+    DataCollatorForTokenClassification,
+    DataCollatorWithPadding,
+)
 from datasets import Dataset
 
 from sklearn.preprocessing import LabelEncoder
@@ -27,7 +31,7 @@ from mavpdl1.utils.utils import (
     id_labeled_items,
     get_from_indexes,
     condense_df,
-    CustomCallback
+    CustomCallback,
 )
 from mavpdl1.preprocessing.data_preprocessing import PDL1Data
 from mavpdl1.model.ner_model import BERTNER
@@ -48,9 +52,13 @@ if __name__ == "__main__":
     # label set for test results is just O, B-result, I-result
     label_set_results = ["O", "B-result", "I-result"]
     # # label set for vendor and unit
-    label_set_vendor_unit = np.concatenate((all_data["TEST"].dropna().unique(),
-                                            all_data["UNIT"].dropna().unique(),
-                                            np.array(["UNK_TEST", "UNK_UNIT"])))
+    label_set_vendor_unit = np.concatenate(
+        (
+            all_data["TEST"].dropna().unique(),
+            all_data["UNIT"].dropna().unique(),
+            np.array(["UNK_TEST", "UNK_UNIT"]),
+        )
+    )
 
     # encoders for the labels
     label_enc_results = LabelEncoder().fit(label_set_results)
@@ -128,7 +136,9 @@ if __name__ == "__main__":
         ner = BERTNER(config, label_enc_results, tokenizer)
 
         # add data collator
-        data_collator = DataCollatorForTokenClassification(tokenizer, padding=True, return_tensors="pt")
+        data_collator = DataCollatorForTokenClassification(
+            tokenizer, padding=True, return_tensors="pt"
+        )
 
         ner.update_save_path(f"{config.savepath}/fold_{i}")
 
@@ -170,7 +180,9 @@ if __name__ == "__main__":
 
     # get the labeled data for train and dev partition
     # test partition already generated above
-    train_ids, val_ids = train_test_split(all_labeled, test_size=0.25, random_state=config.seed)
+    train_ids, val_ids = train_test_split(
+        all_labeled, test_size=0.25, random_state=config.seed
+    )
 
     # get train data using train_ids
     # set of document SIDs was passed to split earlier
@@ -183,16 +195,20 @@ if __name__ == "__main__":
     # convert to dataset
     # todo: here, we need label instead of labels to run!
     train_dataset = Dataset.from_dict(
-        {"texts": train_df['CANDIDATE'].tolist(),
-         "label": train_df['GOLD'].tolist(),
-         "TIUDocumentSID": train_df['TIUDocumentSID'].tolist()}
+        {
+            "texts": train_df["CANDIDATE"].tolist(),
+            "label": train_df["GOLD"].tolist(),
+            "TIUDocumentSID": train_df["TIUDocumentSID"].tolist(),
+        }
     )
     train_dataset = train_dataset.map(tokize, batched=True)
 
     val_dataset = Dataset.from_dict(
-        {"texts": val_df['CANDIDATE'].tolist(),
-         "label": val_df['GOLD'].tolist(),
-         "TIUDocumentSID": val_df['TIUDocumentSID'].tolist()}
+        {
+            "texts": val_df["CANDIDATE"].tolist(),
+            "label": val_df["GOLD"].tolist(),
+            "TIUDocumentSID": val_df["TIUDocumentSID"].tolist(),
+        }
     )
     val_dataset = val_dataset.map(tokize, batched=True)
 
@@ -209,9 +225,6 @@ if __name__ == "__main__":
     classification_metrics = classification_trainer.train()
 
     y_pred = classification_trainer.predict(val_dataset)
-
-
-
 
     # SAVE RESULTS
     # ---------------------------------------------------------

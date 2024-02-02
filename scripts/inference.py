@@ -5,14 +5,24 @@ import json
 import evaluate
 import logging
 
-from transformers import BertForTokenClassification, BertTokenizerFast, Trainer, TrainingArguments
+from transformers import (
+    BertForTokenClassification,
+    BertTokenizerFast,
+    Trainer,
+    TrainingArguments,
+)
 from datasets import Dataset
 
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
 
 from seqeval.scheme import IOB1
-from seqeval.metrics import f1_score, precision_score, recall_score, classification_report
+from seqeval.metrics import (
+    f1_score,
+    precision_score,
+    recall_score,
+    classification_report,
+)
 
 
 # read in data
@@ -25,5 +35,3 @@ from seqeval.metrics import f1_score, precision_score, recall_score, classificat
 
 
 # generate predictions on test partition
-
-

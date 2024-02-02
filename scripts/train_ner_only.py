@@ -14,9 +14,7 @@ from sklearn.model_selection import train_test_split, KFold
 
 from sklearn.metrics import confusion_matrix
 
-from seqeval.metrics import (
-    classification_report
-)
+from seqeval.metrics import classification_report
 
 from config import train_config as config
 
@@ -25,7 +23,7 @@ from mavpdl1.utils.utils import (
     get_tokenizer,
     tokenize_label_data,
     get_from_indexes,
-    CustomCallback
+    CustomCallback,
 )
 from mavpdl1.preprocessing.data_preprocessing import PDL1Data
 from mavpdl1.model.ner_model import BERTNER
@@ -45,9 +43,13 @@ if __name__ == "__main__":
     # label set for test results is just O, B-result, I-result
     label_set_results = ["O", "B-result", "I-result"]
     # # label set for vendor and unit
-    label_set_vendor_unit = np.concatenate((all_data["TEST"].dropna().unique(),
-                                            all_data["UNIT"].dropna().unique(),
-                                            np.array(["UNK_TEST", "UNK_UNIT"])))
+    label_set_vendor_unit = np.concatenate(
+        (
+            all_data["TEST"].dropna().unique(),
+            all_data["UNIT"].dropna().unique(),
+            np.array(["UNK_TEST", "UNK_UNIT"]),
+        )
+    )
 
     # encoders for the labels
     label_enc_results = LabelEncoder().fit(label_set_results)
@@ -97,7 +99,7 @@ if __name__ == "__main__":
 
     # do CV over the data
     for i, (train_index, test_index) in enumerate(folds.split(idxs)):
-        logging.info(f'Now beginning fold {i}')
+        logging.info(f"Now beginning fold {i}")
 
         X_train, X_val = get_from_indexes(X_train_full, train_index, test_index)
         y_train, y_val = get_from_indexes(y_train_full, train_index, test_index)
@@ -126,7 +128,9 @@ if __name__ == "__main__":
         ner = BERTNER(config, label_enc_results, tokenizer)
 
         # add data collator
-        data_collator = DataCollatorForTokenClassification(tokenizer, padding=True, return_tensors="pt")
+        data_collator = DataCollatorForTokenClassification(
+            tokenizer, padding=True, return_tensors="pt"
+        )
 
         ner.update_save_path(f"{config.savepath}/fold_{i}")
 
@@ -153,10 +157,7 @@ if __name__ == "__main__":
         predictions = torch.argmax(torch.from_numpy(y_pred.predictions), dim=2)
         labels = [list(map(int, label)) for label in val_dataset["labels"]]
 
-        true_labels = [
-            label_enc_results.inverse_transform(label)
-            for label in labels
-        ]
+        true_labels = [label_enc_results.inverse_transform(label) for label in labels]
         true_predictions = [
             label_enc_results.inverse_transform(prediction)
             for prediction in predictions
