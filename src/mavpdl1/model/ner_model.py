@@ -9,6 +9,16 @@ import evaluate
 seqeval = evaluate.load("seqeval")
 
 
+# class TrainingArgumentsCPU(TrainingArguments):
+#
+#     @property
+#     def device(self) -> torch.device:
+#         if torch.cuda.is_available():
+#             return torch.device("cuda")
+#         else:
+#             return torch.device("cpu")
+#
+
 class BERTNER:
     """
     A BERT-based model for NER classification
@@ -21,8 +31,8 @@ class BERTNER:
         self.model.resize_token_embeddings(len(tokenizer))
 
         # put device on gpu or cpu
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model.to(device)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "mps")
+        self.model.to(self.device)
 
         # set tokenizer
         self.tokenizer = tokenizer
@@ -49,7 +59,7 @@ class BERTNER:
             dataloader_pin_memory=config.dataloader_pin_memory,
             metric_for_best_model=config.metric_for_best_model,
             weight_decay=config.weight_decay,
-            use_cpu=config.use_cpu,
+            use_mps_device=True if self.device == torch.device('mps') else False,
         )
 
     def compute_metrics(self, pred_targets):
@@ -98,5 +108,5 @@ class BERTNER:
             dataloader_pin_memory=self.config.dataloader_pin_memory,
             metric_for_best_model=self.config.metric_for_best_model,
             weight_decay=self.config.weight_decay,
-            use_cpu=self.config.use_cpu,
+            use_mps_device=True if self.device == torch.device('mps') else False,
         )

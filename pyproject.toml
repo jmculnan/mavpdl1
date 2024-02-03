@@ -1,7 +1,7 @@
 [build-system]
 requires = [
     "setuptools>=49",
-    "wheel"
+    "wheel",
 ]
 
 build-backend = "setuptools.build_meta"
@@ -9,6 +9,20 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mavpdl1"
 version = "1.0"
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = [
+    "pandas",
+    "torch==2.0.0",
+    "datasets",
+    "transformers==4.30.2",
+    "accelerate>=0.20.1",
+    "scikit-learn",
+    "seqeval",
+    "evaluate",
+    "urllib3==1.26.6"
+]}
 
 [tool.setuptools.packages.find]
 where = ["src"]
