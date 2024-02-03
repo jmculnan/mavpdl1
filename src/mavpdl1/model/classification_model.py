@@ -26,8 +26,8 @@ class BERTTextClassifier:
         self.model.resize_token_embeddings(len(tokenizer))
 
         # put device on gpu or cpu
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model.to(device)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "mps")
+        self.model.to(self.device)
 
         # set tokenizer
         self.tokenizer = tokenizer
@@ -49,7 +49,7 @@ class BERTTextClassifier:
             dataloader_pin_memory=config.dataloader_pin_memory,
             metric_for_best_model=config.metric_for_best_model,
             weight_decay=config.weight_decay,
-            use_cpu=config.use_cpu,
+            use_mps_device=True if self.device == torch.device('mps') else False,
         )
 
     def multilabel_compute_metrics(self, pred_targets):

@@ -3,24 +3,18 @@
 # IMPORT STATEMENTS
 import evaluate
 import numpy as np
+import torch
+import logging
 
-from transformers import (
-    Trainer,
-    DataCollatorForTokenClassification,
-    DataCollatorWithPadding,
-)
+from transformers import Trainer, DataCollatorForTokenClassification
 from datasets import Dataset
 
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split, KFold
 
-from seqeval.scheme import IOB1
-from seqeval.metrics import (
-    f1_score,
-    precision_score,
-    recall_score,
-    classification_report,
-)
+from sklearn.metrics import confusion_matrix
+
+from seqeval.metrics import classification_report
 
 from config import train_config as config
 
@@ -28,14 +22,11 @@ from config import train_config as config
 from mavpdl1.utils.utils import (
     get_tokenizer,
     tokenize_label_data,
-    id_labeled_items,
     get_from_indexes,
-    condense_df,
     CustomCallback,
 )
 from mavpdl1.preprocessing.data_preprocessing import PDL1Data
 from mavpdl1.model.ner_model import BERTNER
-from mavpdl1.model.classification_model import BERTTextClassifier
 
 # load seqeval in evaluate
 seqeval = evaluate.load("seqeval")
@@ -62,7 +53,6 @@ if __name__ == "__main__":
 
     # encoders for the labels
     label_enc_results = LabelEncoder().fit(label_set_results)
-    label_enc_vendor_unit = LabelEncoder().fit(label_set_vendor_unit)
 
     # get tokenizer
     tokenizer = get_tokenizer(config.model)
@@ -109,6 +99,8 @@ if __name__ == "__main__":
 
     # do CV over the data
     for i, (train_index, test_index) in enumerate(folds.split(idxs)):
+        logging.info(f"Now beginning fold {i}")
+
         X_train, X_val = get_from_indexes(X_train_full, train_index, test_index)
         y_train, y_val = get_from_indexes(y_train_full, train_index, test_index)
         ids_train, ids_val = get_from_indexes(ids_train_full, train_index, test_index)
@@ -162,72 +154,25 @@ if __name__ == "__main__":
         # to select data inputs for classification task
         y_pred = trainer.predict(val_dataset)
 
-        # IDENTIFY ALL SAMPLES THAT WILL MOVE ON TO BE USED AS INPUT WITH NEXT MODEL
-        # define a second computation
-        all_labeled_ids = id_labeled_items(
-            y_pred.predictions,
-            val_dataset["TIUDocumentSID"],
-            label_enc_results.transform(["O"]),
-        )
-        all_labeled.extend(all_labeled_ids)
+        predictions = torch.argmax(torch.from_numpy(y_pred.predictions), dim=2)
+        labels = [list(map(int, label)) for label in val_dataset["labels"]]
 
-    print(all_labeled)
+        true_labels = [label_enc_results.inverse_transform(label) for label in labels]
+        true_predictions = [
+            label_enc_results.inverse_transform(prediction)
+            for prediction in predictions
+        ]
 
-    # PART 2
-    # USE THE IDENTIFIED PD-L1 INPUTS TO TRAIN A CLASSIFIER TO GET
-    # VENDOR AND UNIT INFORMATION FROM THESE SAMPLES, WHEN AVAILABLE
-    classifier = BERTTextClassifier(config, label_enc_vendor_unit, tokenizer)
+        true_predictions = list(map(list, true_predictions))
+        true_labels = list(map(list, true_labels))
 
-    # get the labeled data for train and dev partition
-    # test partition already generated above
-    train_ids, val_ids = train_test_split(
-        all_labeled, test_size=0.25, random_state=config.seed
-    )
+        preds_for_confusion = predictions.flatten().squeeze().tolist()
+        labels_for_confusion = [label for label_list in labels for label in label_list]
 
-    # get train data using train_ids
-    # set of document SIDs was passed to split earlier
-    train_df = all_data[all_data["TIUDocumentSID"].isin(train_ids)]
-    train_df = condense_df(train_df, label_enc_vendor_unit)
+        logging.info("Confusion matrix on validation set: ")
+        logging.info(confusion_matrix(labels_for_confusion, preds_for_confusion))
 
-    val_df = all_data[all_data["TIUDocumentSID"].isin(val_ids)]
-    val_df = condense_df(val_df, label_enc_vendor_unit)
+        report = classification_report(true_labels, true_predictions, digits=2)
+        logging.info(label_enc_results.classes_)
 
-    # convert to dataset
-    # todo: here, we need label instead of labels to run!
-    train_dataset = Dataset.from_dict(
-        {
-            "texts": train_df["CANDIDATE"].tolist(),
-            "label": train_df["GOLD"].tolist(),
-            "TIUDocumentSID": train_df["TIUDocumentSID"].tolist(),
-        }
-    )
-    train_dataset = train_dataset.map(tokize, batched=True)
-
-    val_dataset = Dataset.from_dict(
-        {
-            "texts": val_df["CANDIDATE"].tolist(),
-            "label": val_df["GOLD"].tolist(),
-            "TIUDocumentSID": val_df["TIUDocumentSID"].tolist(),
-        }
-    )
-    val_dataset = val_dataset.map(tokize, batched=True)
-
-    # instantiate trainer
-    classification_trainer = Trainer(
-        model=classifier.model,
-        args=classifier.training_args,
-        train_dataset=train_dataset,
-        eval_dataset=val_dataset,
-        compute_metrics=classifier.multilabel_compute_metrics,
-    )
-
-    # train the model
-    classification_metrics = classification_trainer.train()
-
-    y_pred = classification_trainer.predict(val_dataset)
-
-    # SAVE RESULTS
-    # ---------------------------------------------------------
-    if config.save_plots:
-        # save the training plots
-        pass
+        logging.info(report)

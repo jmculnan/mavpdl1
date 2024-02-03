@@ -11,9 +11,9 @@ setuptools.setup(
     ],
     install_requires=[
         "pandas",
-        "torch",
+        "torch==2.0.0",
         "datasets",
-        "transformers",
+        "transformers==4.30.2",
         "accelerate>=0.20.1",
         "scikit-learn",
         "seqeval",
