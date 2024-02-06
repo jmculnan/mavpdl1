@@ -14,6 +14,8 @@ Path(savepath).mkdir(parents=True, exist_ok=True)
 save_plots = True
 # whether to save the trained model
 save_model = True
+# whether to evaluate on the test set at end of training
+evaluate_on_test_set = False
 
 # set output info
 outname = "first_file"
@@ -48,23 +50,40 @@ else:
 consoleHandler.setFormatter(logFormatter)
 rootLogger.addHandler(consoleHandler)
 
-
-# model parameters
-# todo: make separate args for NER model and classifier
-num_epochs = 4  # 50
-per_device_train_batch_size = 4  # 32
-per_device_eval_batch_size = 64
+######################################################
+############### SHARED PARAMETERS ####################
+######################################################
+# these parameters are used by BOTH the NER model and
+# the document-level classifier
 evaluation_strategy = "epoch"
 save_strategy = "epoch"
-total_saved_epochs = 10
-load_best_model_at_end = True
-warmup_steps = 500
-logging_dir = 'output/logs'
+total_saved_epochs = 1  # only save best model
 logging_strategy = 'epoch'
+load_best_model_at_end = True
 dataloader_pin_memory = False
 metric_for_best_model = 'f1'
-weight_decay = 0.001
 use_cpu = True
+warmup_steps = 500
 
-# ner model-specific parameters
-num_splits = 5
+######################################################
+############# NER MODEL PARAMETERS ###################
+######################################################
+# these parameters will be used with the NER model
+# but NOT with the document-level classifier
+ner_num_epochs = 4  # 50
+ner_per_device_train_batch_size = 4  # 32
+ner_per_device_eval_batch_size = 64
+ner_logging_dir = f'{savepath}/ner/logs'
+ner_weight_decay = 0.001
+ner_num_splits = 5
+
+######################################################
+############# CLS MODEL PARAMETERS ###################
+######################################################
+# these parameters will be used with the document
+# classifier but NOT with the NER model
+cls_num_epochs = 4  # 50
+cls_per_device_train_batch_size = 4  # 32
+cls_per_device_eval_batch_size = 64
+cls_logging_dir = f'{savepath}/classifier/logs'
+cls_weight_decay = 0.001

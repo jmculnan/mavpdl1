@@ -1,15 +1,15 @@
 # a transformer model for classification at the text level
 import torch
-import torch.nn as nn
 import numpy as np
+import logging
 
 from sklearn.metrics import precision_recall_fscore_support, accuracy_score
-from transformers import BertModel, TrainingArguments, BertForSequenceClassification
+from transformers import TrainingArguments, BertForSequenceClassification
 
 
-class BERTTextClassifier:
+class BERTTextMultilabelClassifier:
     """
-    A BERT-based document-level classifier
+    A BERT-based document-level multilabel classifier
     """
     def __init__(self, config, label_encoder, tokenizer, model=None):
         # we may want to be able to provide a model we've been training with
@@ -38,17 +38,17 @@ class BERTTextClassifier:
         # set training args
         self.training_args = TrainingArguments(
             output_dir=f"{config.savepath}/multilabel_classifier",
-            num_train_epochs=config.num_epochs,
-            per_device_train_batch_size=config.per_device_train_batch_size,
-            per_device_eval_batch_size=config.per_device_eval_batch_size,
+            num_train_epochs=config.cls_num_epochs,
+            per_device_train_batch_size=config.cls_per_device_train_batch_size,
+            per_device_eval_batch_size=config.cls_per_device_eval_batch_size,
             evaluation_strategy=config.evaluation_strategy,
             save_strategy=config.save_strategy,
             load_best_model_at_end=config.load_best_model_at_end,
             warmup_steps=config.warmup_steps,
-            logging_dir=config.logging_dir,
+            logging_dir=config.cls_logging_dir,
             dataloader_pin_memory=config.dataloader_pin_memory,
             metric_for_best_model=config.metric_for_best_model,
-            weight_decay=config.weight_decay,
+            weight_decay=config.cls_weight_decay,
             use_mps_device=True if self.device == torch.device('mps') else False,
         )
 
@@ -61,9 +61,8 @@ class BERTTextClassifier:
 
         todo: the metrics used depend on task formulation
             -- multitask (ID vendor + unit separately, 1 item per example)
-            -- multitask, multilabel (vendor + unit separately, 1+ per example)
-            -- single-task, multilabel (is this ever the case?
-               only if vendor_unit is being preserved as gold label type)
+            -- singletask multilabel (vendor + unit together, 1+ per example)
+            -- multitask multilabel (vendor + unit separately, 1+ per example)
         """
         predictions, targets = pred_targets
 
@@ -79,11 +78,14 @@ class BERTTextClassifier:
         targets = [list(map(int, label)) for label in targets]
 
         # calculate precision, recall, f1, support
-        # selected micro f1 for imbalanced classes
+        # selected macro f1 for imbalanced classes
         # can change as needed
-        results = precision_recall_fscore_support(targets, preds, average='micro')
-
+        results = precision_recall_fscore_support(targets, preds, average='macro')
         accuracy = accuracy_score(targets, preds)
+
+        # todo: this doesn't indicate whether you're getting results on
+        #   train or evaluation data -- will need to alter
+        logging.info(results)
 
         return {
             "precision": results[0],

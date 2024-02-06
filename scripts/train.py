@@ -35,7 +35,7 @@ from mavpdl1.utils.utils import (
 )
 from mavpdl1.preprocessing.data_preprocessing import PDL1Data
 from mavpdl1.model.ner_model import BERTNER
-from mavpdl1.model.classification_model import BERTTextClassifier
+from mavpdl1.model.classification_model import BERTTextMultilabelClassifier
 
 # load seqeval in evaluate
 seqeval = evaluate.load("seqeval")
@@ -99,7 +99,7 @@ if __name__ == "__main__":
     test_dataset = test_dataset.map(tokize, batched=True)
 
     # convert train data into KFold splits
-    splits = config.num_splits
+    splits = config.ner_num_splits
     folds = KFold(n_splits=splits, random_state=config.seed, shuffle=True)
     idxs = range(len(X_train_full))
 
@@ -140,7 +140,7 @@ if __name__ == "__main__":
             tokenizer, padding=True, return_tensors="pt"
         )
 
-        ner.update_save_path(f"{config.savepath}/fold_{i}")
+        ner.update_save_path(f"{config.savepath}/ner/fold_{i}")
 
         # set up trainer
         trainer = Trainer(
@@ -176,7 +176,7 @@ if __name__ == "__main__":
     # PART 2
     # USE THE IDENTIFIED PD-L1 INPUTS TO TRAIN A CLASSIFIER TO GET
     # VENDOR AND UNIT INFORMATION FROM THESE SAMPLES, WHEN AVAILABLE
-    classifier = BERTTextClassifier(config, label_enc_vendor_unit, tokenizer)
+    classifier = BERTTextMultilabelClassifier(config, label_enc_vendor_unit, tokenizer)
 
     # get the labeled data for train and dev partition
     # test partition already generated above
@@ -225,9 +225,3 @@ if __name__ == "__main__":
     classification_metrics = classification_trainer.train()
 
     y_pred = classification_trainer.predict(val_dataset)
-
-    # SAVE RESULTS
-    # ---------------------------------------------------------
-    if config.save_plots:
-        # save the training plots
-        pass

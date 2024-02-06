@@ -89,7 +89,7 @@ if __name__ == "__main__":
     test_dataset = test_dataset.map(tokize, batched=True)
 
     # convert train data into KFold splits
-    splits = config.num_splits
+    splits = config.ner_num_splits
     folds = KFold(n_splits=splits, random_state=config.seed, shuffle=True)
     idxs = range(len(X_train_full))
 
@@ -132,7 +132,8 @@ if __name__ == "__main__":
             tokenizer, padding=True, return_tensors="pt"
         )
 
-        ner.update_save_path(f"{config.savepath}/fold_{i}")
+        ner.update_save_path(f"{config.savepath}/ner/fold_{i}")
+        ner.update_log_path(f"{config.ner_logging_dir}/fold_{i}")
 
         # set up trainer
         trainer = Trainer(
@@ -169,7 +170,7 @@ if __name__ == "__main__":
         preds_for_confusion = predictions.flatten().squeeze().tolist()
         labels_for_confusion = [label for label_list in labels for label in label_list]
 
-        logging.info("Confusion matrix on validation set: ")
+        logging.info(f"Confusion matrix on validation set: ")
         logging.info(confusion_matrix(labels_for_confusion, preds_for_confusion))
 
         report = classification_report(true_labels, true_predictions, digits=2)
