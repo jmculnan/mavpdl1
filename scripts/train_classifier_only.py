@@ -3,16 +3,15 @@
 # IMPORT STATEMENTS
 import evaluate
 import numpy as np
+import logging
+import torch
 
-from transformers import (
-    Trainer,
-    DataCollatorForTokenClassification,
-    DataCollatorWithPadding,
-)
+from transformers import Trainer
 from datasets import Dataset
 
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import multilabel_confusion_matrix, classification_report
 
 from config import train_config as config
 
@@ -20,8 +19,6 @@ from config import train_config as config
 from mavpdl1.utils.utils import (
     get_tokenizer,
     tokenize_label_data,
-    id_labeled_items,
-    get_from_indexes,
     condense_df,
     CustomCallback,
 )
@@ -136,8 +133,37 @@ if __name__ == "__main__":
         eval_dataset=val_dataset,
         compute_metrics=classifier.multilabel_compute_metrics,
     )
+    # add callback to print train compute_metrics for train set
+    # in addition to val set
+    classification_trainer.add_callback(CustomCallback(classification_trainer))
 
     # train the model
     classification_metrics = classification_trainer.train()
 
+    logging.info("Results of our model on the validation dataset: ")
+    # look at best model performance on validation dataset
     y_pred = classification_trainer.predict(val_dataset)
+
+    # first, apply sigmoid on predictions which are of shape (batch_size, num_labels)
+    sigmoid = torch.nn.Sigmoid()
+    probs = sigmoid(torch.Tensor(y_pred.predictions))
+    # next, use threshold to turn them into integer predictions
+    preds = np.zeros(probs.shape)
+    # use 0.5 as a threshold for predictions
+    preds[np.where(probs >= 0.5)] = 1
+
+    labels = val_dataset["label"]
+    labels = [list(map(int, label)) for label in labels]
+
+    # get confusion matrix
+    logging.info(f"Confusion matrix on validation set: ")
+    logging.info(multilabel_confusion_matrix(labels, preds))
+
+    # get classification report on val set
+    logging.info(f"Classification report on validation set: ")
+    logging.info(classification_report(labels,
+                                       preds,
+                                       target_names=label_enc_vendor_unit.classes_,
+                                       zero_division=0.0)
+                 )
+

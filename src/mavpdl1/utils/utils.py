@@ -49,28 +49,6 @@ def get_tokenizer(tokenizer_model="allenai/scibert_scivocab_uncased"):
     return tokenizer
 
 
-def create_labels(text, tokens, start_idx, end_idx, labels, label):
-    """
-    Modified from Kyle code
-    :param text: Full text string
-    :param tokens: Tokenized text string
-    :param start_idx: idx of char onset in text
-    :param end_idx: idx of char offset in text
-    :param labels:
-    :param label:
-    :return:
-    """
-    if labels is None:
-        labels = label_encoder.transform(["O"] * 512)
-    for i, offsets in enumerate(tokens["offset_mapping"][0]):
-        if label and start_idx <= offsets[0] and offsets[1] <= end_idx:
-            if label_encoder.inverse_transform([labels[i - 1]])[0] != "I-" + label:
-                labels[i] = label_encoder.transform(["I-" + label])[0]
-            else:
-                labels[i] = label_encoder.transform(["B-" + label])[0]
-    return text, labels
-
-
 class CustomCallback(TrainerCallback):
     """
     To get predictions on train set at end of each epoch

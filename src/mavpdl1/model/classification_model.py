@@ -37,7 +37,7 @@ class BERTTextMultilabelClassifier:
 
         # set training args
         self.training_args = TrainingArguments(
-            output_dir=f"{config.savepath}/multilabel_classifier",
+            output_dir=f"{config.savepath}/classifier",
             num_train_epochs=config.cls_num_epochs,
             per_device_train_batch_size=config.cls_per_device_train_batch_size,
             per_device_eval_batch_size=config.cls_per_device_eval_batch_size,
@@ -80,7 +80,8 @@ class BERTTextMultilabelClassifier:
         # calculate precision, recall, f1, support
         # selected macro f1 for imbalanced classes
         # can change as needed
-        results = precision_recall_fscore_support(targets, preds, average='macro')
+        results = precision_recall_fscore_support(targets, preds, average='macro',
+                                                  zero_division=0.0)
         accuracy = accuracy_score(targets, preds)
 
         # todo: this doesn't indicate whether you're getting results on
