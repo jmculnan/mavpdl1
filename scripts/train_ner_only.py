@@ -25,7 +25,7 @@ from mavpdl1.utils.utils import (
     tokenize_label_data,
     get_from_indexes,
     CustomCallback,
-    id_labeled_items
+    id_labeled_items,
 )
 from mavpdl1.preprocessing.data_preprocessing import PDL1Data
 from mavpdl1.model.ner_model import BERTNER
@@ -191,4 +191,6 @@ if __name__ == "__main__":
 
     # save the list of all documents containing PD-L1 values according to the model
     labeled_df = pd.DataFrame(all_labeled, columns=["TIUDocumentSID"])
-    labeled_df.to_csv(f"{config.savepath}/all_documents_with_IDed_pdl1_values.csv", index=False)
+    labeled_df.to_csv(
+        f"{config.savepath}/all_documents_with_IDed_pdl1_values.csv", index=False
+    )

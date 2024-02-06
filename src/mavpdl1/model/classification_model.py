@@ -11,6 +11,7 @@ class BERTTextMultilabelClassifier:
     """
     A BERT-based document-level multilabel classifier
     """
+
     def __init__(self, config, label_encoder, tokenizer, model=None):
         # we may want to be able to provide a model we've been training with
         # as part of a longer training procedure
@@ -49,7 +50,7 @@ class BERTTextMultilabelClassifier:
             dataloader_pin_memory=config.dataloader_pin_memory,
             metric_for_best_model=config.metric_for_best_model,
             weight_decay=config.cls_weight_decay,
-            use_mps_device=True if self.device == torch.device('mps') else False,
+            use_mps_device=True if self.device == torch.device("mps") else False,
         )
 
     def multilabel_compute_metrics(self, pred_targets):
@@ -80,8 +81,9 @@ class BERTTextMultilabelClassifier:
         # calculate precision, recall, f1, support
         # selected macro f1 for imbalanced classes
         # can change as needed
-        results = precision_recall_fscore_support(targets, preds, average='macro',
-                                                  zero_division=0.0)
+        results = precision_recall_fscore_support(
+            targets, preds, average="macro", zero_division=0.0
+        )
         accuracy = accuracy_score(targets, preds)
 
         # todo: this doesn't indicate whether you're getting results on

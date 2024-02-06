@@ -12,6 +12,7 @@ class BERTNER:
     """
     A BERT-based model for NER classification
     """
+
     def __init__(self, config, label_encoder, tokenizer):
         self.model = BertForTokenClassification.from_pretrained(
             config.model, num_labels=len(label_encoder.classes_)
@@ -48,7 +49,7 @@ class BERTNER:
             dataloader_pin_memory=config.dataloader_pin_memory,
             metric_for_best_model=config.metric_for_best_model,
             weight_decay=config.ner_weight_decay,
-            use_mps_device=True if self.device == torch.device('mps') else False,
+            use_mps_device=True if self.device == torch.device("mps") else False,
         )
 
     def compute_metrics(self, pred_targets):

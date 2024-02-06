@@ -55,6 +55,7 @@ class CustomCallback(TrainerCallback):
     In order to print training curve + loss over epochs
     https://discuss.huggingface.co/t/metrics-for-training-set-in-trainer/2461/5
     """
+
     def __init__(self, trainer) -> None:
         super().__init__()
         self._trainer = trainer
@@ -62,7 +63,9 @@ class CustomCallback(TrainerCallback):
     def on_epoch_end(self, args, state, control, **kwargs):
         if control.should_evaluate:
             control_copy = deepcopy(control)
-            self._trainer.evaluate(eval_dataset=self._trainer.train_dataset, metric_key_prefix="train")
+            self._trainer.evaluate(
+                eval_dataset=self._trainer.train_dataset, metric_key_prefix="train"
+            )
             return control_copy
 
 
@@ -145,11 +148,15 @@ def condense_df(df, label_encoder):
     # convert nan values to unk_unit
     df["UNIT"] = df["UNIT"].apply(lambda x: "UNK_UNIT" if pd.isnull(x) else x)
 
-    listed = ['TEST', 'UNIT']
-    condensed = df.groupby(['TIUDocumentSID', 'CANDIDATE'])[listed].agg(set).reset_index()
+    listed = ["TEST", "UNIT"]
+    condensed = (
+        df.groupby(["TIUDocumentSID", "CANDIDATE"])[listed].agg(set).reset_index()
+    )
 
-    condensed['GOLD'] = condensed.apply(lambda x: x['TEST'].union(x['UNIT']), axis=1)
-    condensed['GOLD'] = condensed['GOLD'].apply(lambda x: vectorize_gold(x, label_encoder))
+    condensed["GOLD"] = condensed.apply(lambda x: x["TEST"].union(x["UNIT"]), axis=1)
+    condensed["GOLD"] = condensed["GOLD"].apply(
+        lambda x: vectorize_gold(x, label_encoder)
+    )
 
     return condensed
 

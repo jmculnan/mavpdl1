@@ -240,11 +240,14 @@ if __name__ == "__main__":
 
     # get classification report on val set
     logging.info(f"Classification report on validation set: ")
-    logging.info(classification_report(labels,
-                                       preds,
-                                       target_names=label_enc_vendor_unit.classes_,
-                                       zero_division=0.0)
-                 )
+    logging.info(
+        classification_report(
+            labels,
+            preds,
+            target_names=label_enc_vendor_unit.classes_,
+            zero_division=0.0,
+        )
+    )
 
     logging.info("TRAINING ON NER MODEL AND CLASSIFIER COMPLETE.")
 
@@ -297,8 +300,11 @@ if __name__ == "__main__":
 
         # get classification report on val set
         logging.info(f"Classification report on test set: ")
-        logging.info(classification_report(labels,
-                                           preds,
-                                           target_names=label_enc_vendor_unit.classes_,
-                                           zero_division=0.0)
-                     )
+        logging.info(
+            classification_report(
+                labels,
+                preds,
+                target_names=label_enc_vendor_unit.classes_,
+                zero_division=0.0,
+            )
+        )
