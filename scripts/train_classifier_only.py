@@ -1,26 +1,17 @@
-# train an NER model
+# train a multilabel classifier model
 
 # IMPORT STATEMENTS
 import evaluate
 import numpy as np
+import logging
+import torch
 
-from transformers import (
-    Trainer,
-    DataCollatorForTokenClassification,
-    DataCollatorWithPadding,
-)
+from transformers import Trainer
 from datasets import Dataset
 
 from sklearn.preprocessing import LabelEncoder
-from sklearn.model_selection import train_test_split, KFold
-
-from seqeval.scheme import IOB1
-from seqeval.metrics import (
-    f1_score,
-    precision_score,
-    recall_score,
-    classification_report,
-)
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import multilabel_confusion_matrix, classification_report
 
 from config import train_config as config
 
@@ -28,13 +19,11 @@ from config import train_config as config
 from mavpdl1.utils.utils import (
     get_tokenizer,
     tokenize_label_data,
-    id_labeled_items,
-    get_from_indexes,
     condense_df,
     CustomCallback,
 )
 from mavpdl1.preprocessing.data_preprocessing import PDL1Data
-from mavpdl1.model.classification_model import BERTTextClassifier
+from mavpdl1.model.classification_model import BERTTextMultilabelClassifier
 
 # load seqeval in evaluate
 seqeval = evaluate.load("seqeval")
@@ -97,15 +86,10 @@ if __name__ == "__main__":
     test_dataset = Dataset.from_dict({"texts": X_test, "TIUDocumentSID": ids_test})
     test_dataset = test_dataset.map(tokize, batched=True)
 
-    # convert train data into KFold splits
-    splits = config.num_splits
-    folds = KFold(n_splits=splits, random_state=config.seed, shuffle=True)
-    idxs = range(len(X_train_full))
-
     # PART 2
     # USE THE IDENTIFIED PD-L1 INPUTS TO TRAIN A CLASSIFIER TO GET
     # VENDOR AND UNIT INFORMATION FROM THESE SAMPLES, WHEN AVAILABLE
-    classifier = BERTTextClassifier(config, label_enc_vendor_unit, tokenizer)
+    classifier = BERTTextMultilabelClassifier(config, label_enc_vendor_unit, tokenizer)
 
     # get the labeled data for train and dev partition
     # test partition already generated above
@@ -149,14 +133,39 @@ if __name__ == "__main__":
         eval_dataset=val_dataset,
         compute_metrics=classifier.multilabel_compute_metrics,
     )
+    # add callback to print train compute_metrics for train set
+    # in addition to val set
+    classification_trainer.add_callback(CustomCallback(classification_trainer))
 
     # train the model
     classification_metrics = classification_trainer.train()
 
+    logging.info("Results of our model on the validation dataset: ")
+    # look at best model performance on validation dataset
     y_pred = classification_trainer.predict(val_dataset)
 
-    # SAVE RESULTS
-    # ---------------------------------------------------------
-    if config.save_plots:
-        # save the training plots
-        pass
+    # first, apply sigmoid on predictions which are of shape (batch_size, num_labels)
+    sigmoid = torch.nn.Sigmoid()
+    probs = sigmoid(torch.Tensor(y_pred.predictions))
+    # next, use threshold to turn them into integer predictions
+    preds = np.zeros(probs.shape)
+    # use 0.5 as a threshold for predictions
+    preds[np.where(probs >= 0.5)] = 1
+
+    labels = val_dataset["label"]
+    labels = [list(map(int, label)) for label in labels]
+
+    # get confusion matrix
+    logging.info(f"Confusion matrix on validation set: ")
+    logging.info(multilabel_confusion_matrix(labels, preds))
+
+    # get classification report on val set
+    logging.info(f"Classification report on validation set: ")
+    logging.info(
+        classification_report(
+            labels,
+            preds,
+            target_names=label_enc_vendor_unit.classes_,
+            zero_division=0.0,
+        )
+    )

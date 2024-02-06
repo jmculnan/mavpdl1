@@ -3,6 +3,7 @@
 # IMPORT STATEMENTS
 import evaluate
 import numpy as np
+import pandas as pd
 import torch
 import logging
 
@@ -24,6 +25,7 @@ from mavpdl1.utils.utils import (
     tokenize_label_data,
     get_from_indexes,
     CustomCallback,
+    id_labeled_items,
 )
 from mavpdl1.preprocessing.data_preprocessing import PDL1Data
 from mavpdl1.model.ner_model import BERTNER
@@ -89,7 +91,7 @@ if __name__ == "__main__":
     test_dataset = test_dataset.map(tokize, batched=True)
 
     # convert train data into KFold splits
-    splits = config.num_splits
+    splits = config.ner_num_splits
     folds = KFold(n_splits=splits, random_state=config.seed, shuffle=True)
     idxs = range(len(X_train_full))
 
@@ -132,7 +134,8 @@ if __name__ == "__main__":
             tokenizer, padding=True, return_tensors="pt"
         )
 
-        ner.update_save_path(f"{config.savepath}/fold_{i}")
+        ner.update_save_path(f"{config.savepath}/ner/fold_{i}")
+        ner.update_log_path(f"{config.ner_logging_dir}/fold_{i}")
 
         # set up trainer
         trainer = Trainer(
@@ -154,6 +157,15 @@ if __name__ == "__main__":
         # to select data inputs for classification task
         y_pred = trainer.predict(val_dataset)
 
+        # IDENTIFY ALL SAMPLES THAT WILL MOVE ON TO BE USED AS INPUT WITH NEXT MODEL
+        # define a second computation
+        all_labeled_ids = id_labeled_items(
+            y_pred.predictions,
+            val_dataset["TIUDocumentSID"],
+            label_enc_results.transform(["O"]),
+        )
+        all_labeled.extend(all_labeled_ids)
+
         predictions = torch.argmax(torch.from_numpy(y_pred.predictions), dim=2)
         labels = [list(map(int, label)) for label in val_dataset["labels"]]
 
@@ -169,10 +181,16 @@ if __name__ == "__main__":
         preds_for_confusion = predictions.flatten().squeeze().tolist()
         labels_for_confusion = [label for label_list in labels for label in label_list]
 
-        logging.info("Confusion matrix on validation set: ")
+        logging.info(f"Confusion matrix on validation set: ")
         logging.info(confusion_matrix(labels_for_confusion, preds_for_confusion))
 
         report = classification_report(true_labels, true_predictions, digits=2)
         logging.info(label_enc_results.classes_)
 
         logging.info(report)
+
+    # save the list of all documents containing PD-L1 values according to the model
+    labeled_df = pd.DataFrame(all_labeled, columns=["TIUDocumentSID"])
+    labeled_df.to_csv(
+        f"{config.savepath}/all_documents_with_IDed_pdl1_values.csv", index=False
+    )

@@ -49,34 +49,13 @@ def get_tokenizer(tokenizer_model="allenai/scibert_scivocab_uncased"):
     return tokenizer
 
 
-def create_labels(text, tokens, start_idx, end_idx, labels, label):
-    """
-    Modified from Kyle code
-    :param text: Full text string
-    :param tokens: Tokenized text string
-    :param start_idx: idx of char onset in text
-    :param end_idx: idx of char offset in text
-    :param labels:
-    :param label:
-    :return:
-    """
-    if labels is None:
-        labels = label_encoder.transform(["O"] * 512)
-    for i, offsets in enumerate(tokens["offset_mapping"][0]):
-        if label and start_idx <= offsets[0] and offsets[1] <= end_idx:
-            if label_encoder.inverse_transform([labels[i - 1]])[0] != "I-" + label:
-                labels[i] = label_encoder.transform(["I-" + label])[0]
-            else:
-                labels[i] = label_encoder.transform(["B-" + label])[0]
-    return text, labels
-
-
 class CustomCallback(TrainerCallback):
     """
     To get predictions on train set at end of each epoch
     In order to print training curve + loss over epochs
     https://discuss.huggingface.co/t/metrics-for-training-set-in-trainer/2461/5
     """
+
     def __init__(self, trainer) -> None:
         super().__init__()
         self._trainer = trainer
@@ -84,7 +63,9 @@ class CustomCallback(TrainerCallback):
     def on_epoch_end(self, args, state, control, **kwargs):
         if control.should_evaluate:
             control_copy = deepcopy(control)
-            self._trainer.evaluate(eval_dataset=self._trainer.train_dataset, metric_key_prefix="train")
+            self._trainer.evaluate(
+                eval_dataset=self._trainer.train_dataset, metric_key_prefix="train"
+            )
             return control_copy
 
 
@@ -167,11 +148,15 @@ def condense_df(df, label_encoder):
     # convert nan values to unk_unit
     df["UNIT"] = df["UNIT"].apply(lambda x: "UNK_UNIT" if pd.isnull(x) else x)
 
-    listed = ['TEST', 'UNIT']
-    condensed = df.groupby(['TIUDocumentSID', 'CANDIDATE'])[listed].agg(set).reset_index()
+    listed = ["TEST", "UNIT"]
+    condensed = (
+        df.groupby(["TIUDocumentSID", "CANDIDATE"])[listed].agg(set).reset_index()
+    )
 
-    condensed['GOLD'] = condensed.apply(lambda x: x['TEST'].union(x['UNIT']), axis=1)
-    condensed['GOLD'] = condensed['GOLD'].apply(lambda x: vectorize_gold(x, label_encoder))
+    condensed["GOLD"] = condensed.apply(lambda x: x["TEST"].union(x["UNIT"]), axis=1)
+    condensed["GOLD"] = condensed["GOLD"].apply(
+        lambda x: vectorize_gold(x, label_encoder)
+    )
 
     return condensed
 

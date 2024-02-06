@@ -21,7 +21,8 @@ dependencies = {file = [
     "scikit-learn",
     "seqeval",
     "evaluate",
-    "urllib3==1.26.6"
+    "urllib3==1.26.6",
+    "optuna"
 ]}
 
 [tool.setuptools.packages.find]

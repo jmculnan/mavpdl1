@@ -3,24 +3,18 @@
 # IMPORT STATEMENTS
 import evaluate
 import numpy as np
+import logging
+import torch
 
 from transformers import (
     Trainer,
     DataCollatorForTokenClassification,
-    DataCollatorWithPadding,
 )
 from datasets import Dataset
 
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split, KFold
-
-from seqeval.scheme import IOB1
-from seqeval.metrics import (
-    f1_score,
-    precision_score,
-    recall_score,
-    classification_report,
-)
+from sklearn.metrics import multilabel_confusion_matrix, classification_report
 
 from config import train_config as config
 
@@ -35,7 +29,7 @@ from mavpdl1.utils.utils import (
 )
 from mavpdl1.preprocessing.data_preprocessing import PDL1Data
 from mavpdl1.model.ner_model import BERTNER
-from mavpdl1.model.classification_model import BERTTextClassifier
+from mavpdl1.model.classification_model import BERTTextMultilabelClassifier
 
 # load seqeval in evaluate
 seqeval = evaluate.load("seqeval")
@@ -99,7 +93,7 @@ if __name__ == "__main__":
     test_dataset = test_dataset.map(tokize, batched=True)
 
     # convert train data into KFold splits
-    splits = config.num_splits
+    splits = config.ner_num_splits
     folds = KFold(n_splits=splits, random_state=config.seed, shuffle=True)
     idxs = range(len(X_train_full))
 
@@ -140,7 +134,8 @@ if __name__ == "__main__":
             tokenizer, padding=True, return_tensors="pt"
         )
 
-        ner.update_save_path(f"{config.savepath}/fold_{i}")
+        ner.update_save_path(f"{config.savepath}/ner/fold_{i}")
+        ner.update_log_path(f"{config.ner_logging_dir}/fold_{i}")
 
         # set up trainer
         trainer = Trainer(
@@ -160,6 +155,7 @@ if __name__ == "__main__":
 
         # get the best predictions from the model
         # to select data inputs for classification task
+        print("BEST NER PREDICTIONS ON VALIDATION SET: ")
         y_pred = trainer.predict(val_dataset)
 
         # IDENTIFY ALL SAMPLES THAT WILL MOVE ON TO BE USED AS INPUT WITH NEXT MODEL
@@ -171,12 +167,12 @@ if __name__ == "__main__":
         )
         all_labeled.extend(all_labeled_ids)
 
-    print(all_labeled)
-
+    # print(all_labeled)
+    logging.info("CV WITH NER MODEL COMPLETE. NOW BEGINNING CLASSIFICATION TASK")
     # PART 2
     # USE THE IDENTIFIED PD-L1 INPUTS TO TRAIN A CLASSIFIER TO GET
     # VENDOR AND UNIT INFORMATION FROM THESE SAMPLES, WHEN AVAILABLE
-    classifier = BERTTextClassifier(config, label_enc_vendor_unit, tokenizer)
+    classifier = BERTTextMultilabelClassifier(config, label_enc_vendor_unit, tokenizer)
 
     # get the labeled data for train and dev partition
     # test partition already generated above
@@ -224,10 +220,91 @@ if __name__ == "__main__":
     # train the model
     classification_metrics = classification_trainer.train()
 
+    print("BEST CLASSIFIER PREDICTIONS ON VALIDATION SET: ")
     y_pred = classification_trainer.predict(val_dataset)
 
-    # SAVE RESULTS
-    # ---------------------------------------------------------
-    if config.save_plots:
-        # save the training plots
-        pass
+    # first, apply sigmoid on predictions which are of shape (batch_size, num_labels)
+    sigmoid = torch.nn.Sigmoid()
+    probs = sigmoid(torch.Tensor(y_pred.predictions))
+    # next, use threshold to turn them into integer predictions
+    preds = np.zeros(probs.shape)
+    # use 0.5 as a threshold for predictions
+    preds[np.where(probs >= 0.5)] = 1
+
+    labels = val_dataset["label"]
+    labels = [list(map(int, label)) for label in labels]
+
+    # get confusion matrix
+    logging.info(f"Confusion matrix on validation set: ")
+    logging.info(multilabel_confusion_matrix(labels, preds))
+
+    # get classification report on val set
+    logging.info(f"Classification report on validation set: ")
+    logging.info(
+        classification_report(
+            labels,
+            preds,
+            target_names=label_enc_vendor_unit.classes_,
+            zero_division=0.0,
+        )
+    )
+
+    logging.info("TRAINING ON NER MODEL AND CLASSIFIER COMPLETE.")
+
+    # optional step to run inference on test set at the end of training
+    if config.evaluate_on_test_set:
+        # warning: this doesn't use VERY best model from CV for NER
+        #   only best model from last fold of CV
+        #   to run on very best model, use inference.py
+        print("RESULTS OF NER ON TEST PARTITION:")
+        test_results = trainer.predict(test_dataset)
+
+        # get only the items that were IDed as containing PD-L1 value
+        test_labeled_ids = id_labeled_items(
+            test_results.predictions,
+            test_dataset["TIUDocumentSID"],
+            label_enc_results.transform(["O"]),
+        )
+
+        # subset the original dataframe with these SIDs
+        test_df = all_data[all_data["TIUDocumentSID"].isin(test_labeled_ids)]
+        test_df = condense_df(test_df, label_enc_vendor_unit)
+
+        new_test_dataset = Dataset.from_dict(
+            {
+                "texts": test_df["CANDIDATE"].tolist(),
+                "label": test_df["GOLD"].tolist(),
+                "TIUDocumentSID": test_df["TIUDocumentSID"].tolist(),
+            }
+        )
+        new_test_dataset = new_test_dataset.map(tokize, batched=True)
+
+        print("RESULTS OF CLASSIFICATION ON TEST DATA IDed IN STEP 1")
+        cls_test_results = classification_trainer.predict(new_test_dataset)
+
+        # todo: turn this into a fuction
+        # first, apply sigmoid on predictions which are of shape (batch_size, num_labels)
+        sigmoid = torch.nn.Sigmoid()
+        probs = sigmoid(torch.Tensor(cls_test_results.predictions))
+        # next, use threshold to turn them into integer predictions
+        preds = np.zeros(probs.shape)
+        # use 0.5 as a threshold for predictions
+        preds[np.where(probs >= 0.5)] = 1
+
+        labels = new_test_dataset["label"]
+        labels = [list(map(int, label)) for label in labels]
+
+        # get confusion matrix
+        logging.info(f"Confusion matrix on test set: ")
+        logging.info(multilabel_confusion_matrix(labels, preds))
+
+        # get classification report on val set
+        logging.info(f"Classification report on test set: ")
+        logging.info(
+            classification_report(
+                labels,
+                preds,
+                target_names=label_enc_vendor_unit.classes_,
+                zero_division=0.0,
+            )
+        )

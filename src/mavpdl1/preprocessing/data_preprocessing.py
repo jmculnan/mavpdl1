@@ -55,7 +55,7 @@ class PDL1Data:
                     "TEST",
                     "UNIT",
                     "CANDIDATE",
-                    "TIUDocumentSID"
+                    "TIUDocumentSID",
                 ]
             ]
         # if the TIUDocumentSID is not present
@@ -68,7 +68,7 @@ class PDL1Data:
                     "ANNOTATION",
                     "TEST",
                     "UNIT",
-                    "CANDIDATE"
+                    "CANDIDATE",
                 ]
             ]
 
