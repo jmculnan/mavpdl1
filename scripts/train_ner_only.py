@@ -38,23 +38,24 @@ if __name__ == "__main__":
     # PREPARE DATA
     # ---------------------------------------------------------
     # use deidentified data sample
-    data = PDL1Data(config.dataset_location,
+    pdl1 = PDL1Data(config.dataset_location,
                     model= config.model,
-                    ner_classes=['result'],
-                    classification_classes=['vendor', 'unit'],
+                    ner_classes=['unit'],
+                    classification_classes=['vendor'],
                     classification_type='multilabel')
-    all_data = data.data
+    all_data = pdl1.data
 
     # get the set of labels for values (result) and vendor and unit (for multilabel task)
-    label_set_results, label_set_vendor_unit = data.ner_labels, data.cls_labels
-    # encoders for the labels
-    label_enc_results = data.ner_encoder
+    label_set_results, label_set_vendor_unit = pdl1.ner_labels, pdl1.cls_labels
+    logging.info("Label set created--labels are: ")
+    logging.info("NER Labels: ", pdl1.ner_labels[0].tolist())
+    logging.info("CLS Labels: ", pdl1.cls_labels[0].tolist())
 
-    # get tokenizer
-    tokenizer = data.tokenizer
+    # encoders for the labels
+    label_enc_results = pdl1.ner_encoder
 
     # get tokenized data and IOB-2 gold labeled data
-    tokenized, gold, sids = tokenize_label_data(tokenizer, all_data, label_enc_results)
+    tokenized, gold, sids = pdl1.tokenize_label_data()
 
     # convert data to train, dev, and test
     # percentage breakdown and code formatting from Kyle code
@@ -69,20 +70,10 @@ if __name__ == "__main__":
         tokenized, gold, sids, test_size=0.15, random_state=config.seed
     )
 
-    # tokenize function for dataset mapping
-    def tokize(text):
-        return tokenizer(
-            text["texts"],
-            truncation=True,
-            padding="max_length",
-            max_length=512,
-            return_tensors="pt",
-        )
-
     # generate the test dataset if needed
     # train and val done below due to nature of the tasks
     test_dataset = Dataset.from_dict({"texts": X_test, "TIUDocumentSID": ids_test})
-    test_dataset = test_dataset.map(tokize, batched=True)
+    test_dataset = test_dataset.map(pdl1.tokenize, batched=True)
 
     # convert train data into KFold splits
     splits = config.ner_num_splits
@@ -106,12 +97,12 @@ if __name__ == "__main__":
         train_dataset = Dataset.from_dict(
             {"texts": X_train, "labels": y_train, "TIUDocumentSID": ids_train}
         )
-        train_dataset = train_dataset.map(tokize, batched=True)
+        train_dataset = train_dataset.map(pdl1.tokenize, batched=True)
 
         val_dataset = Dataset.from_dict(
             {"texts": X_val, "labels": y_val, "TIUDocumentSID": ids_val}
         )
-        val_dataset = val_dataset.map(tokize, batched=True)
+        val_dataset = val_dataset.map(pdl1.tokenize, batched=True)
 
         # TRAIN THE MODEL
         # ---------------------------------------------------------
@@ -121,11 +112,11 @@ if __name__ == "__main__":
         #   and use those in the classification task
 
         # PART 1
-        ner = BERTNER(config, label_enc_results, tokenizer)
+        ner = BERTNER(config, label_enc_results, pdl1.tokenizer)
 
         # add data collator
         data_collator = DataCollatorForTokenClassification(
-            tokenizer, padding=True, return_tensors="pt"
+            pdl1.tokenizer, padding=True, return_tensors="pt"
         )
 
         ner.update_save_path(f"{config.savepath}/ner/fold_{i}")

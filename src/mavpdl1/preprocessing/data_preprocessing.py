@@ -14,6 +14,7 @@
 # INAVLID_CHARS -- BOOL (only true once in sample)
 # MULTIPLE LABELS -- BOOL (always false)
 # OVERLAPS -- BOOL (alwyas false or missing)
+import logging
 
 # import statements
 import pandas as pd
@@ -41,7 +42,10 @@ class PDL1Data:
         ner_classes, classification_classes, and classification_type may
         have several options depending on task goal. Current task set-ups
         are as follows:
-        1. Have NER for vendor, unit, and value separate
+        1. Have NER for vendor, unit, and value separately
+            TODO: this is NOT implemented, as we do not have gold annotations
+                for each of these types. Dataframe format may change once
+                these are added.
             - in_ner = ['test', 'unit', 'result']
             - in_classification = None
             - classification_type is ignored
@@ -85,12 +89,16 @@ class PDL1Data:
             if multitask classification, classification label set is a
             tuple of label sets for (vendor, unit)
         """
-        # in_ner always has at least one item -- value
+        # in_ner always has exactly one item -- either result or unit
         ner_label_set = ["O"]
         if 'result' in self.in_ner:
             ner_label_set.extend(["B-result", "I-result"])
-        if 'unit' in self.in_ner:
-            ner_label_set.extend(self.data["UNIT"].dropna().unique().tolist())
+        elif 'unit' in self.in_ner:
+            units = self.data["UNIT"].dropna().unique().tolist()
+            unitset = [[f"B-{item}", f"I-{item}"] for item in units]
+            ner_label_set.extend([item for units in unitset for item in units])
+        else:
+            logging.error(f"Cannot get label set for set {self.in_ner}.")
 
         classification_label_set = []
         second_cls_label_set = None
@@ -113,24 +121,27 @@ class PDL1Data:
             return np.array(ner_label_set), \
                 np.array(classification_label_set)
 
-    def tokenize_label_data(self, tokenizer, data_frame, label_encoder):
+    def tokenize(self, texts):
+        return self.tokenizer(
+            texts["texts"],
+            truncation=True,
+            padding="max_length",
+            max_length=512,
+            return_tensors="pt",
+        )
+
+    def tokenize_label_data(self):
         """
-        Use a pd df with columns ANNOTATION and CANDIDATE
+        Tokenizes and labels the data in self.data
         to get IOB-labeled, tokenized data
-        :param tokenizer: a transformers tokenizer
-        :param data_frame: pd df that has NOT been randomized
-        :param label_encoder: a label encoder
         :return: tokenized input, IOB-formatted word-level ys, ids
-        todo: label_encoder isn't really needed right now
-            but should be more useful with a larger number
-            of classes; think on if this is really the best
-            place for it.
+        todo: add in functionality to accept multitask NER
         """
         all_texts = []
         all_labels = []
         all_sids = []
 
-        for i, row in data_frame.iterrows():
+        for i, row in self.data.iterrows():
             # check if the row is a second annotation of the same example
             if not np.isnan(row["ANNOTATION_INDEX"]) and int(row["ANNOTATION_INDEX"]) > 0:
                 tokenized = all_texts[-1]
@@ -138,33 +149,57 @@ class PDL1Data:
                 del all_texts[-1], all_labels[-1], all_sids[-1]
             else:
                 # tokenize the item
-                tokenized = tokenizer.tokenize(row["CANDIDATE"])
+                tokenized = self.tokenizer.tokenize(row["CANDIDATE"])
                 # generate O labels for max length
-                labels = label_encoder.transform(["O"] * 512)
+                labels = self.ner_encoder.transform(["O"] * 512)
             # tokenize the annotation
             # this is set up with at most one annotation per row
             # if there is no annotation, just leave 'O' labels
             if type(row["ANNOTATION"]) == str:
-                tok_ann = tokenizer.tokenize(row["ANNOTATION"])
+                tok_ann = self.tokenizer.tokenize(row["ANNOTATION"])
                 # TODO: find more accurate way to do this
                 #   it's not guaranteed to always work
                 # start with first occurrence
                 for j in range(len(tokenized)):
                     if tokenized[j: j + len(tok_ann)] == tok_ann:
-                        labels[j] = label_encoder.transform(["B-result"])
-                        if len(tok_ann) > 1:
-                            for k in range(1, len(tok_ann)):
-                                labels[j + k] = label_encoder.transform(["I-result"])
-                        # we only take the first occurrence of this
-                        # issue if we see a number twice but the
-                        # actual label should be SECOND occurrence
-                        break
+                        # if we are only labeling 'result', we don't look at other
+                        # columns in the data, just transform to B-result
+                        if len(self.in_ner) == 1:
+                            if self.in_ner[0] == 'result':
+                                labels[j] = self.ner_encoder.transform(["B-result"])
+                            # else, we need to use the appropriate column from data
+                            # todo: this assumes AT MOST one task is in the NER
+                            #   out of test, unit; will we ever need BOTH?
+                            elif self.in_ner[0] == 'unit' and type(row['UNIT']) != float:
+                                    labels[j] = self.ner_encoder.transform([f"B-{row['UNIT']}"])
+                            elif self.in_ner[0] == 'test' and type(row['TEST']) != float:
+                                    labels[j] = self.ner_encoder.transform([f"B-{row['TEST']}"])
+                        else:
+                            logging.error("Multiple items in self.in_ner--currently only use one NER task at a time.")
+
+                    if len(tok_ann) > 1:
+                        for k in range(1, len(tok_ann)):
+                            if len(self.in_ner) == 1:
+                                if self.in_ner[0] == 'result':
+                                    labels[j + k] = self.ner_encoder.transform(["I-result"])
+                                elif self.in_ner[0] == 'unit' and type(row['UNIT']) != float:
+                                    labels[j] = self.ner_encoder.transform([f"I-{row['UNIT']}"])
+                                elif self.in_ner[0] == 'test' and type(row['TEST']) != float:
+                                    labels[j] = self.ner_encoder.transform([f"I-{row['TEST']}"])
+                            else:
+                                logging.error("Multiple items in self.in_ner--currently only use one NER task at a time.")
+
+                    # we only take the first occurrence of this
+                    # issue if we see a number twice but the
+                    # actual label should be SECOND occurrence
+                    break
 
             # add tokenized data + labels to full lists
             all_texts.append(row["CANDIDATE"])
             # convert to long to try to keep it from changing during training
             all_labels.append(labels)
-            if "TIUDocumentSID" in data_frame.columns:
+            # todo: TIUDocumentSID is NOT unique in the main dataset
+            if "TIUDocumentSID" in self.data.columns:
                 all_sids.append(row["TIUDocumentSID"])
             else:
                 # todo: remove after getting full data
