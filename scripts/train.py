@@ -42,17 +42,8 @@ if __name__ == "__main__":
     data = PDL1Data(config.dataset_location)
     all_data = data.data
 
-    # get label sets
-    # label set for test results is just O, B-result, I-result
-    label_set_results = ["O", "B-result", "I-result"]
-    # # label set for vendor and unit
-    label_set_vendor_unit = np.concatenate(
-        (
-            all_data["TEST"].dropna().unique(),
-            all_data["UNIT"].dropna().unique(),
-            np.array(["UNK_TEST", "UNK_UNIT"]),
-        )
-    )
+    # get the set of labels for values (result) and vendor and unit (for multilabel task)
+    label_set_results, label_set_vendor_unit = data.get_label_set(in_ner=['result'], in_classification=['vendor', 'unit'], classification='multilabel')
 
     # encoders for the labels
     label_enc_results = LabelEncoder().fit(label_set_results)
