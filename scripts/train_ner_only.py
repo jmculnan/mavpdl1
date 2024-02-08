@@ -10,7 +10,7 @@ import logging
 from transformers import Trainer, DataCollatorForTokenClassification
 from datasets import Dataset
 
-from sklearn.preprocessing import LabelEncoder
+
 from sklearn.model_selection import train_test_split, KFold
 
 from sklearn.metrics import confusion_matrix
@@ -38,17 +38,20 @@ if __name__ == "__main__":
     # PREPARE DATA
     # ---------------------------------------------------------
     # use deidentified data sample
-    data = PDL1Data(config.dataset_location)
+    data = PDL1Data(config.dataset_location,
+                    model= config.model,
+                    ner_classes=['result'],
+                    classification_classes=['vendor', 'unit'],
+                    classification_type='multilabel')
     all_data = data.data
 
     # get the set of labels for values (result) and vendor and unit (for multilabel task)
-    label_set_results, label_set_vendor_unit = data.get_label_set(in_ner=['result'], in_classification=['vendor', 'unit'], classification='multilabel')
-
+    label_set_results, label_set_vendor_unit = data.ner_labels, data.cls_labels
     # encoders for the labels
-    label_enc_results = LabelEncoder().fit(label_set_results)
+    label_enc_results = data.ner_encoder
 
     # get tokenizer
-    tokenizer = get_tokenizer(config.model)
+    tokenizer = data.tokenizer
 
     # get tokenized data and IOB-2 gold labeled data
     tokenized, gold, sids = tokenize_label_data(tokenizer, all_data, label_enc_results)

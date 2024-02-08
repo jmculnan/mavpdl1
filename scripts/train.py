@@ -39,11 +39,12 @@ if __name__ == "__main__":
     # PREPARE DATA
     # ---------------------------------------------------------
     # use deidentified data sample
-    data = PDL1Data(config.dataset_location)
+    data = PDL1Data(config.dataset_location, ner_classes=['result'], classification_classes=['vendor', 'unit'],
+                    classification_type='multilabel')
     all_data = data.data
 
     # get the set of labels for values (result) and vendor and unit (for multilabel task)
-    label_set_results, label_set_vendor_unit = data.get_label_set(in_ner=['result'], in_classification=['vendor', 'unit'], classification='multilabel')
+    label_set_results, label_set_vendor_unit = data.ner_labels, data.cls_labels
 
     # encoders for the labels
     label_enc_results = LabelEncoder().fit(label_set_results)

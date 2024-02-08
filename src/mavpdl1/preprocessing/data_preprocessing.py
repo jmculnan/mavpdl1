@@ -18,21 +18,29 @@
 # import statements
 import pandas as pd
 import numpy as np
+import uuid
+
+from sklearn.preprocessing import LabelEncoder
+
+from mavpdl1.utils.utils import get_tokenizer
 
 
 class PDL1Data:
-    def __init__(self, path_string):
+    def __init__(self, path_string, model, ner_classes, classification_classes=None, classification_type='multitask'):
         """
+        An object used to load and prepare data for input into a network
         :param path_string: The string path to the data csv
-        """
-        self.path = path_string
-        self.data = self._read_in_data()
-
-    def get_label_set(self, in_ner, in_classification=None, classification_type='multitask'):
-        """
-        Get the label sets for the PDL1 task
-        These labels may be set up a couple of ways depending
-        on task goal. The types are below:
+        :param model: the model name (used to instantiate tokenizer)
+        :param ner_classes: list of class types to include
+            options 'vendor', 'unit', 'result'
+        :param classification_classes: optional list of class types
+            options 'vendor', 'unit'
+        :param classification_type: if classification_classes isn't empty,
+            whether to return a joined label set for multilabel
+            or task-specific label sets for a multitask setup
+        ner_classes, classification_classes, and classification_type may
+        have several options depending on task goal. Current task set-ups
+        are as follows:
         1. Have NER for vendor, unit, and value separate
             - in_ner = ['test', 'unit', 'result']
             - in_classification = None
@@ -47,35 +55,51 @@ class PDL1Data:
             - in_classification = ['test', 'unit']
             - classification_type = 'multitask'
         3. Have NER for value + unit, classification for vendor
-            - in_ner = ['result'] *as of 24.02.08, bc unit is not
-                given a separate annotation in the data
+            - in_ner = ['unit'] *as of 24.02.08, bc unit is not
+                given a separate annotation from value in the data
             - in_classification = ['test']
             - classification_type is ignored
-        :param in_ner: list of class types to include
-            options 'vendor', 'unit', 'result'. ALWAYS contains 'result'
-        :param in_classification: optional list of class types
-            options 'vendor', 'unit'
-        :param classification_type: if in_classification isn't empty,
-            whether to return a joined label set for multilabel
-            or task-specific label sets for a multitask setup
-        These two params together should have all three class types
+        """
+        self.path = path_string
+        self.data = self._read_in_data()
+
+        self.in_ner = ner_classes
+        self.in_classification = classification_classes
+        self.classification_type = classification_type
+
+        # get set of NER and classification labels
+        self.ner_labels, self.cls_labels = self._get_label_set()
+
+        # get tokenizer
+        self.tokenizer = get_tokenizer(model)
+
+        # get label encoders
+        self.ner_encoder = LabelEncoder().fit(self.ner_labels)
+        self.cls_encoder = LabelEncoder().fit(self.cls_labels[0] if type(self.cls_labels) == tuple else self.cls_labels)
+        self.cls_encoder2 = LabelEncoder().fit(self.cls_labels[1]) if type(self.cls_labels) == tuple else None
+
+    def _get_label_set(self):
+        """
+        Get the label sets for the PDL1 task
         :return: two sets of labels, one for NER, one for classification
             if multitask classification, classification label set is a
             tuple of label sets for (vendor, unit)
         """
         # in_ner always has at least one item -- value
         ner_label_set = ["O"]
-        for label_class in in_ner:
-            ner_label_set.extend([f"B-{label_class}", f"I-{label_class}"])
+        if 'result' in self.in_ner:
+            ner_label_set.extend(["B-result", "I-result"])
+        if 'unit' in self.in_ner:
+            ner_label_set.extend(self.data["UNIT"].dropna().unique().tolist())
 
         classification_label_set = []
         second_cls_label_set = None
-        if in_classification:
-            if 'vendor' in in_classification:
+        if self.in_classification:
+            if 'vendor' in self.in_classification:
                 classification_label_set.append("UNK_TEST")
                 classification_label_set.extend(self.data["TEST"].dropna().unique().tolist())
-            if 'unit' in in_classification:
-                if classification_type == "multitask":
+            if 'unit' in self.in_classification:
+                if self.classification_type == "multitask":
                     second_cls_label_set = ["UNK_UNIT"]
                     second_cls_label_set.extend(self.data["UNIT"].dropna().unique().tolist())
                 else:
@@ -88,6 +112,66 @@ class PDL1Data:
         else:
             return np.array(ner_label_set), \
                 np.array(classification_label_set)
+
+    def tokenize_label_data(self, tokenizer, data_frame, label_encoder):
+        """
+        Use a pd df with columns ANNOTATION and CANDIDATE
+        to get IOB-labeled, tokenized data
+        :param tokenizer: a transformers tokenizer
+        :param data_frame: pd df that has NOT been randomized
+        :param label_encoder: a label encoder
+        :return: tokenized input, IOB-formatted word-level ys, ids
+        todo: label_encoder isn't really needed right now
+            but should be more useful with a larger number
+            of classes; think on if this is really the best
+            place for it.
+        """
+        all_texts = []
+        all_labels = []
+        all_sids = []
+
+        for i, row in data_frame.iterrows():
+            # check if the row is a second annotation of the same example
+            if not np.isnan(row["ANNOTATION_INDEX"]) and int(row["ANNOTATION_INDEX"]) > 0:
+                tokenized = all_texts[-1]
+                labels = all_labels[-1]
+                del all_texts[-1], all_labels[-1], all_sids[-1]
+            else:
+                # tokenize the item
+                tokenized = tokenizer.tokenize(row["CANDIDATE"])
+                # generate O labels for max length
+                labels = label_encoder.transform(["O"] * 512)
+            # tokenize the annotation
+            # this is set up with at most one annotation per row
+            # if there is no annotation, just leave 'O' labels
+            if type(row["ANNOTATION"]) == str:
+                tok_ann = tokenizer.tokenize(row["ANNOTATION"])
+                # TODO: find more accurate way to do this
+                #   it's not guaranteed to always work
+                # start with first occurrence
+                for j in range(len(tokenized)):
+                    if tokenized[j: j + len(tok_ann)] == tok_ann:
+                        labels[j] = label_encoder.transform(["B-result"])
+                        if len(tok_ann) > 1:
+                            for k in range(1, len(tok_ann)):
+                                labels[j + k] = label_encoder.transform(["I-result"])
+                        # we only take the first occurrence of this
+                        # issue if we see a number twice but the
+                        # actual label should be SECOND occurrence
+                        break
+
+            # add tokenized data + labels to full lists
+            all_texts.append(row["CANDIDATE"])
+            # convert to long to try to keep it from changing during training
+            all_labels.append(labels)
+            if "TIUDocumentSID" in data_frame.columns:
+                all_sids.append(row["TIUDocumentSID"])
+            else:
+                # todo: remove after getting full data
+                # to test code, use random uuid
+                all_sids.append(str(uuid.uuid4()))
+
+        return all_texts, all_labels, all_sids
 
     def _read_in_data(self):
         """
