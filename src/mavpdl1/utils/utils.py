@@ -92,18 +92,20 @@ def condense_df(df, label_encoder, gold_types="both"):
     )
 
     if gold_types == "both":
-        condensed["GOLD"] = condensed.apply(lambda x: x["TEST"].union(x["UNIT"]), axis=1)
+        condensed["GOLD"] = condensed.apply(
+            lambda x: x["TEST"].union(x["UNIT"]), axis=1
+        )
         condensed["GOLD"] = condensed["GOLD"].apply(
             lambda x: vectorize_gold(x, label_encoder)
         )
-    if gold_types == 'test':
+    if gold_types == "test":
         # todo: see if there are ever instances of
         #     multiple tests in a single input
         condensed["GOLD"] = condensed["TEST"]
         condensed["GOLD"] = condensed["GOLD"].apply(
             lambda x: transform_gold(x, label_encoder)
         )
-    elif gold_types == 'unit':
+    elif gold_types == "unit":
         # there are frequently multiple UNITS in an input
         # so you MUST treat this as multilabel
         condensed["GOLD"] = condensed["UNIT"]
@@ -124,7 +126,9 @@ def transform_gold(gold_label, label_encoder):
     :return:
     """
     if len(gold_label) > 1:
-        logging.error("MULTIPLE GOLD LABELS FOUND, BUT THIS IS BEING TREATED AS SINGLE-LABEL TASK")
+        logging.error(
+            "MULTIPLE GOLD LABELS FOUND, BUT THIS IS BEING TREATED AS SINGLE-LABEL TASK"
+        )
         exit("Verify that you are using 'test'")
     else:
         gold = list(gold_label)[0]

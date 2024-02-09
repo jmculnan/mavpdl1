@@ -36,11 +36,13 @@ if __name__ == "__main__":
     # PREPARE DATA
     # ---------------------------------------------------------
     # use deidentified data sample
-    pdl1 = PDL1Data(config.dataset_location,
-                    model=config.model,
-                    ner_classes=['unit'],
-                    classification_classes=['test'],
-                    classification_type='multilabel')
+    pdl1 = PDL1Data(
+        config.dataset_location,
+        model=config.model,
+        ner_classes=["unit"],
+        classification_classes=["test"],
+        classification_type="multilabel",
+    )
     all_data = pdl1.data
 
     # get tokenized data and IOB-2 gold labeled data
@@ -134,7 +136,9 @@ if __name__ == "__main__":
 
         # IDENTIFY ALL SAMPLES THAT WILL MOVE ON TO BE USED AS INPUT WITH NEXT MODEL
         # define a second computation
-        print(f"Identifying all data points with PDL1 values in validation set for fold {i}:")
+        print(
+            f"Identifying all data points with PDL1 values in validation set for fold {i}:"
+        )
         all_labeled_ids = id_labeled_items(
             y_pred.predictions,
             val_dataset["TIUDocumentSID"],
@@ -156,7 +160,9 @@ if __name__ == "__main__":
         all_labeled, test_size=0.25, random_state=config.seed
     )
 
-    logging.info("Preparing train and val datasets from data points predicted to have PD-L1 values")
+    logging.info(
+        "Preparing train and val datasets from data points predicted to have PD-L1 values"
+    )
     # get train data using train_ids
     # set of document SIDs was passed to split earlier
     train_df = all_data[all_data["TIUDocumentSID"].isin(train_ids)]

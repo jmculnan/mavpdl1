@@ -4,7 +4,11 @@ import numpy as np
 import logging
 
 from sklearn.metrics import precision_recall_fscore_support, accuracy_score
-from transformers import TrainingArguments, BertForSequenceClassification, BertForTokenClassification
+from transformers import (
+    TrainingArguments,
+    BertForSequenceClassification,
+    BertForTokenClassification,
+)
 
 
 class BERTTextMultilabelClassifier:

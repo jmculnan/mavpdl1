@@ -42,7 +42,6 @@ from mavpdl1.utils.utils import (
 
 
 if __name__ == "__main__":
-
     # read in data
     data = PDL1Data(config.dataset_location)
     all_data = data.data
@@ -76,6 +75,5 @@ if __name__ == "__main__":
     )
 
     # either read in trained model or train the model
-
 
     # generate predictions on test partition

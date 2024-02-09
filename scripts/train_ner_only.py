@@ -33,11 +33,13 @@ if __name__ == "__main__":
     # PREPARE DATA
     # ---------------------------------------------------------
     # use deidentified data sample
-    pdl1 = PDL1Data(config.dataset_location,
-                    model= config.model,
-                    ner_classes=['unit'],
-                    classification_classes=['test'],
-                    classification_type='multilabel')
+    pdl1 = PDL1Data(
+        config.dataset_location,
+        model=config.model,
+        ner_classes=["unit"],
+        classification_classes=["test"],
+        classification_type="multilabel",
+    )
     all_data = pdl1.data
 
     # get tokenized data and IOB-2 gold labeled data
@@ -142,8 +144,7 @@ if __name__ == "__main__":
 
         true_labels = [pdl1.ner_encoder.inverse_transform(label) for label in labels]
         true_predictions = [
-            pdl1.ner_encoder.inverse_transform(prediction)
-            for prediction in predictions
+            pdl1.ner_encoder.inverse_transform(prediction) for prediction in predictions
         ]
 
         true_predictions = list(map(list, true_predictions))

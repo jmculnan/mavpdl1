@@ -30,12 +30,13 @@ if __name__ == "__main__":
     # PREPARE DATA
     # ---------------------------------------------------------
     # use deidentified data sample
-    pdl1 = PDL1Data(config.dataset_location,
-                    model=config.model,
-                    ner_classes=['unit'],
-                    classification_classes=['test'],
-                    classification_type='multilabel'
-                    )
+    pdl1 = PDL1Data(
+        config.dataset_location,
+        model=config.model,
+        ner_classes=["unit"],
+        classification_classes=["test"],
+        classification_type="multilabel",
+    )
     all_data = pdl1.data
 
     # get tokenized data and IOB-2 gold labeled data
@@ -74,10 +75,10 @@ if __name__ == "__main__":
     # get train data using train_ids
     # set of document SIDs was passed to split earlier
     train_df = all_data[all_data["TIUDocumentSID"].isin(train_ids)]
-    train_df = condense_df(train_df, pdl1.cls_encoder, gold_types='test')
+    train_df = condense_df(train_df, pdl1.cls_encoder, gold_types="test")
 
     val_df = all_data[all_data["TIUDocumentSID"].isin(val_ids)]
-    val_df = condense_df(val_df, pdl1.cls_encoder, gold_types='test')
+    val_df = condense_df(val_df, pdl1.cls_encoder, gold_types="test")
 
     # convert to dataset
     # for some reason here we need LABEL instead of LABELS

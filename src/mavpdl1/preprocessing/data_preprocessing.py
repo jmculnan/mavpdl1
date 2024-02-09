@@ -27,7 +27,14 @@ from mavpdl1.utils.utils import get_tokenizer
 
 
 class PDL1Data:
-    def __init__(self, path_string, model, ner_classes, classification_classes=None, classification_type='multitask'):
+    def __init__(
+        self,
+        path_string,
+        model,
+        ner_classes,
+        classification_classes=None,
+        classification_type="multitask",
+    ):
         """
         An object used to load and prepare data for input into a network
         :param path_string: The string path to the data csv
@@ -85,8 +92,14 @@ class PDL1Data:
 
         # get label encoders
         self.ner_encoder = LabelEncoder().fit(self.ner_labels)
-        self.cls_encoder = LabelEncoder().fit(self.cls_labels[0] if type(self.cls_labels) == tuple else self.cls_labels)
-        self.cls_encoder2 = LabelEncoder().fit(self.cls_labels[1]) if type(self.cls_labels) == tuple else None
+        self.cls_encoder = LabelEncoder().fit(
+            self.cls_labels[0] if type(self.cls_labels) == tuple else self.cls_labels
+        )
+        self.cls_encoder2 = (
+            LabelEncoder().fit(self.cls_labels[1])
+            if type(self.cls_labels) == tuple
+            else None
+        )
         logging.info("Label encoders fit")
 
     def _get_label_set(self):
@@ -98,9 +111,9 @@ class PDL1Data:
         """
         # in_ner always has exactly one item -- either result or unit
         ner_label_set = ["O"]
-        if 'result' in self.in_ner:
+        if "result" in self.in_ner:
             ner_label_set.extend(["B-result", "I-result"])
-        elif 'unit' in self.in_ner:
+        elif "unit" in self.in_ner:
             units = self.data["UNIT"].dropna().unique().tolist()
             unitset = [[f"B-{item}", f"I-{item}"] for item in units]
             ner_label_set.extend([item for units in unitset for item in units])
@@ -110,23 +123,30 @@ class PDL1Data:
         classification_label_set = []
         second_cls_label_set = None
         if self.in_classification:
-            if 'test' in self.in_classification:
+            if "test" in self.in_classification:
                 classification_label_set.append("UNK_TEST")
-                classification_label_set.extend(self.data["TEST"].dropna().unique().tolist())
-            if 'unit' in self.in_classification:
+                classification_label_set.extend(
+                    self.data["TEST"].dropna().unique().tolist()
+                )
+            if "unit" in self.in_classification:
                 if self.classification_type == "multitask":
                     second_cls_label_set = ["UNK_UNIT"]
-                    second_cls_label_set.extend(self.data["UNIT"].dropna().unique().tolist())
+                    second_cls_label_set.extend(
+                        self.data["UNIT"].dropna().unique().tolist()
+                    )
                 else:
                     classification_label_set.append("UNK_UNIT")
-                    classification_label_set.extend(self.data["UNIT"].dropna().unique().tolist())
+                    classification_label_set.extend(
+                        self.data["UNIT"].dropna().unique().tolist()
+                    )
 
         if second_cls_label_set:
-            return np.array(ner_label_set), \
-                (np.array(classification_label_set), np.array(second_cls_label_set))
+            return np.array(ner_label_set), (
+                np.array(classification_label_set),
+                np.array(second_cls_label_set),
+            )
         else:
-            return np.array(ner_label_set), \
-                np.array(classification_label_set)
+            return np.array(ner_label_set), np.array(classification_label_set)
 
     def tokenize(self, texts):
         # tokenizes the texts in a Dataset
@@ -153,7 +173,10 @@ class PDL1Data:
 
         for i, row in self.data.iterrows():
             # check if the row is a second annotation of the same example
-            if not np.isnan(row["ANNOTATION_INDEX"]) and int(row["ANNOTATION_INDEX"]) > 0:
+            if (
+                not np.isnan(row["ANNOTATION_INDEX"])
+                and int(row["ANNOTATION_INDEX"]) > 0
+            ):
                 tokenized = all_texts[-1]
                 labels = all_labels[-1]
                 del all_texts[-1], all_labels[-1], all_sids[-1]
@@ -171,33 +194,57 @@ class PDL1Data:
                 #   it's not guaranteed to always work
                 # start with first occurrence
                 for j in range(len(tokenized)):
-                    if tokenized[j: j + len(tok_ann)] == tok_ann:
+                    if tokenized[j : j + len(tok_ann)] == tok_ann:
                         # if we are only labeling 'result', we don't look at other
                         # columns in the data, just transform to B-result
                         if len(self.in_ner) == 1:
-                            if self.in_ner[0] == 'result':
+                            if self.in_ner[0] == "result":
                                 labels[j] = self.ner_encoder.transform(["B-result"])
                             # else, we need to use the appropriate column from data
                             # todo: this assumes AT MOST one task is in the NER
                             #   out of test, unit; will we ever need BOTH?
-                            elif self.in_ner[0] == 'unit' and type(row['UNIT']) != float:
-                                    labels[j] = self.ner_encoder.transform([f"B-{row['UNIT']}"])
-                            elif self.in_ner[0] == 'test' and type(row['TEST']) != float:
-                                    labels[j] = self.ner_encoder.transform([f"B-{row['TEST']}"])
+                            elif (
+                                self.in_ner[0] == "unit" and type(row["UNIT"]) != float
+                            ):
+                                labels[j] = self.ner_encoder.transform(
+                                    [f"B-{row['UNIT']}"]
+                                )
+                            elif (
+                                self.in_ner[0] == "test" and type(row["TEST"]) != float
+                            ):
+                                labels[j] = self.ner_encoder.transform(
+                                    [f"B-{row['TEST']}"]
+                                )
                         else:
-                            logging.error("Multiple items in self.in_ner--currently only use one NER task at a time.")
+                            logging.error(
+                                "Multiple items in self.in_ner--currently only use one NER task at a time."
+                            )
 
                     if len(tok_ann) > 1:
                         for k in range(1, len(tok_ann)):
                             if len(self.in_ner) == 1:
-                                if self.in_ner[0] == 'result':
-                                    labels[j + k] = self.ner_encoder.transform(["I-result"])
-                                elif self.in_ner[0] == 'unit' and type(row['UNIT']) != float:
-                                    labels[j] = self.ner_encoder.transform([f"I-{row['UNIT']}"])
-                                elif self.in_ner[0] == 'test' and type(row['TEST']) != float:
-                                    labels[j] = self.ner_encoder.transform([f"I-{row['TEST']}"])
+                                if self.in_ner[0] == "result":
+                                    labels[j + k] = self.ner_encoder.transform(
+                                        ["I-result"]
+                                    )
+                                elif (
+                                    self.in_ner[0] == "unit"
+                                    and type(row["UNIT"]) != float
+                                ):
+                                    labels[j] = self.ner_encoder.transform(
+                                        [f"I-{row['UNIT']}"]
+                                    )
+                                elif (
+                                    self.in_ner[0] == "test"
+                                    and type(row["TEST"]) != float
+                                ):
+                                    labels[j] = self.ner_encoder.transform(
+                                        [f"I-{row['TEST']}"]
+                                    )
                             else:
-                                logging.error("Multiple items in self.in_ner--currently only use one NER task at a time.")
+                                logging.error(
+                                    "Multiple items in self.in_ner--currently only use one NER task at a time."
+                                )
 
                     # we only take the first occurrence of this
                     # issue if we see a number twice but the
