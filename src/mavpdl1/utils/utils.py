@@ -1,9 +1,8 @@
 # utilities functions for testing NER code
-import torch
-import uuid
-import numpy as np
 import pandas as pd
 from copy import deepcopy
+import logging
+import numpy as np
 
 from transformers import BertTokenizerFast, TrainerCallback
 
@@ -69,137 +68,15 @@ class CustomCallback(TrainerCallback):
             return control_copy
 
 
-def tokenize_label_data(tokenizer, data_frame, label_encoder):
-    """
-    Use a pd df with columns ANNOTATION and CANDIDATE
-    to get IOB-labeled, tokenized data
-    :param tokenizer: a transformers tokenizer
-    :param data_frame: pd df that has NOT been randomized
-    :param label_encoder: a label encoder
-    :return: tokenized input, IOB-formatted word-level ys, ids
-    todo: label_encoder isn't really needed right now
-        but should be more useful with a larger number
-        of classes; think on if this is really the best
-        place for it.
-    """
-    all_texts = []
-    all_labels = []
-    all_sids = []
-
-    for i, row in data_frame.iterrows():
-        # check if the row is a second annotation of the same example
-        if not np.isnan(row["ANNOTATION_INDEX"]) and int(row["ANNOTATION_INDEX"]) > 0:
-            tokenized = all_texts[-1]
-            labels = all_labels[-1]
-            del all_texts[-1], all_labels[-1], all_sids[-1]
-        else:
-            # tokenize the item
-            tokenized = tokenizer.tokenize(row["CANDIDATE"])
-            # generate O labels for max length
-            labels = label_encoder.transform(["O"] * 512)
-        # tokenize the annotation
-        # this is set up with at most one annotation per row
-        # if there is no annotation, just leave 'O' labels
-        if type(row["ANNOTATION"]) == str:
-            tok_ann = tokenizer.tokenize(row["ANNOTATION"])
-            # TODO: find more accurate way to do this
-            #   it's not guaranteed to always work
-            # start with first occurrence
-            for j in range(len(tokenized)):
-                if tokenized[j : j + len(tok_ann)] == tok_ann:
-                    labels[j] = label_encoder.transform(["B-result"])
-                    if len(tok_ann) > 1:
-                        for k in range(1, len(tok_ann)):
-                            labels[j + k] = label_encoder.transform(["I-result"])
-                    # we only take the first occurrence of this
-                    # issue if we see a number twice but the
-                    # actual label should be SECOND occurrence
-                    break
-
-        # add tokenized data + labels to full lists
-        all_texts.append(row["CANDIDATE"])
-        # convert to long to try to keep it from changing during training
-        all_labels.append(labels)
-        if "TIUDocumentSID" in data_frame.columns:
-            all_sids.append(row["TIUDocumentSID"])
-        else:
-            # todo: remove after getting full data
-            # to test code, use random uuid
-            all_sids.append(str(uuid.uuid4()))
-
-    return all_texts, all_labels, all_sids
-
-
-def tokenize_label_data(tokenizer, data_frame, label_encoder):
-    """
-    Use a pd df with columns ANNOTATION and CANDIDATE
-    to get IOB-labeled, tokenized data
-    :param tokenizer: a transformers tokenizer
-    :param data_frame: pd df that has NOT been randomized
-    :param label_encoder: a label encoder
-    :return: tokenized input, IOB-formatted word-level ys, ids
-    todo: label_encoder isn't really needed right now
-        but should be more useful with a larger number
-        of classes; think on if this is really the best
-        place for it.
-    """
-    all_texts = []
-    all_labels = []
-    all_sids = []
-
-    for i, row in data_frame.iterrows():
-        # check if the row is a second annotation of the same example
-        if not np.isnan(row["ANNOTATION_INDEX"]) and int(row["ANNOTATION_INDEX"]) > 0:
-            tokenized = all_texts[-1]
-            labels = all_labels[-1]
-            del all_texts[-1]
-            del all_labels[-1]
-            del all_sids[-1]
-        else:
-            # tokenize the item
-            tokenized = tokenizer.tokenize(row["CANDIDATE"])
-            # generate O labels for max length
-            labels = label_encoder.transform(["O"] * 512)
-        # tokenize the annotation
-        # this is set up with at most one annotation per row
-        # if there is no annotation, just leave 'O' labels
-        if type(row["ANNOTATION"]) == str:
-            tok_ann = tokenizer.tokenize(row["ANNOTATION"])
-            # TODO: find more accurate way to do this
-            #   it's not guaranteed to always work
-            # start with first occurrence
-            for j in range(len(tokenized)):
-                if tokenized[j : j + len(tok_ann)] == tok_ann:
-                    labels[j] = label_encoder.transform(["B-result"])
-                    if len(tok_ann) > 1:
-                        for k in range(1, len(tok_ann)):
-                            labels[j + k] = label_encoder.transform(["I-result"])
-                    # we only take the first occurrence of this
-                    # issue if we see a number twice but the
-                    # actual label should be SECOND occurrence
-                    break
-
-        # add tokenized data + labels to full lists
-        all_texts.append(row["CANDIDATE"])
-        # convert to long to try to keep it from changing during training
-        all_labels.append(labels)
-        if "TIUDocumentSID" in data_frame.columns:
-            all_sids.append(row["TIUDocumentSID"])
-        else:
-            # todo: remove after getting full data
-            # to test code, use random uuid
-            all_sids.append(str(uuid.uuid4()))
-
-    return all_texts, all_labels, all_sids
-
-
-def condense_df(df, label_encoder):
+def condense_df(df, label_encoder, gold_types="both"):
     """
     Condense a df where multiple rows have the same input text
     But different gold labels
     Concatenate the gold labels
     :param df: Data df
     :param label_encoder: LabelEncoder for TEST UNIT group
+    :param gold_types: list of the types of gold labels we need
+        this may be 'test', 'unit' or 'both'
     :return:
     todo: if task formulation changes, we need this to be different
         as we'll have separate encoders for unit and test
@@ -214,12 +91,45 @@ def condense_df(df, label_encoder):
         df.groupby(["TIUDocumentSID", "CANDIDATE"])[listed].agg(set).reset_index()
     )
 
-    condensed["GOLD"] = condensed.apply(lambda x: x["TEST"].union(x["UNIT"]), axis=1)
-    condensed["GOLD"] = condensed["GOLD"].apply(
-        lambda x: vectorize_gold(x, label_encoder)
-    )
+    if gold_types == "both":
+        condensed["GOLD"] = condensed.apply(lambda x: x["TEST"].union(x["UNIT"]), axis=1)
+        condensed["GOLD"] = condensed["GOLD"].apply(
+            lambda x: vectorize_gold(x, label_encoder)
+        )
+    if gold_types == 'test':
+        # todo: see if there are ever instances of
+        #     multiple tests in a single input
+        condensed["GOLD"] = condensed["TEST"]
+        condensed["GOLD"] = condensed["GOLD"].apply(
+            lambda x: transform_gold(x, label_encoder)
+        )
+    elif gold_types == 'unit':
+        # there are frequently multiple UNITS in an input
+        # so you MUST treat this as multilabel
+        condensed["GOLD"] = condensed["UNIT"]
+        condensed["GOLD"] = condensed["GOLD"].apply(
+            lambda x: vectorize_gold(x, label_encoder)
+        )
+    else:
+        logging.error(f"Gold type {str(gold_types)} unknown.")
 
     return condensed
+
+
+def transform_gold(gold_label, label_encoder):
+    """
+    Use a label encoder to transform text label to gold
+    :param gold_label:
+    :param label_encoder:
+    :return:
+    """
+    if len(gold_label) > 1:
+        logging.error("MULTIPLE GOLD LABELS FOUND, BUT THIS IS BEING TREATED AS SINGLE-LABEL TASK")
+        exit("Verify that you are using 'test'")
+    else:
+        gold = list(gold_label)[0]
+    label = label_encoder.transform([gold])
+    return int(label)
 
 
 # vectorize gold labels

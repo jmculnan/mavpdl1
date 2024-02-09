@@ -12,16 +12,13 @@ from transformers import (
 )
 from datasets import Dataset
 
-from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split, KFold
-from sklearn.metrics import multilabel_confusion_matrix, classification_report
+from sklearn.metrics import confusion_matrix, classification_report
 
 from config import train_config as config
 
 # from other modules here
 from mavpdl1.utils.utils import (
-    get_tokenizer,
-    tokenize_label_data,
     id_labeled_items,
     get_from_indexes,
     condense_df,
@@ -29,7 +26,7 @@ from mavpdl1.utils.utils import (
 )
 from mavpdl1.preprocessing.data_preprocessing import PDL1Data
 from mavpdl1.model.ner_model import BERTNER
-from mavpdl1.model.classification_model import BERTTextMultilabelClassifier
+from mavpdl1.model.classification_model import BERTTextSinglelabelClassifier
 
 # load seqeval in evaluate
 seqeval = evaluate.load("seqeval")
@@ -39,22 +36,15 @@ if __name__ == "__main__":
     # PREPARE DATA
     # ---------------------------------------------------------
     # use deidentified data sample
-    data = PDL1Data(config.dataset_location, ner_classes=['result'], classification_classes=['vendor', 'unit'],
+    pdl1 = PDL1Data(config.dataset_location,
+                    model=config.model,
+                    ner_classes=['unit'],
+                    classification_classes=['test'],
                     classification_type='multilabel')
-    all_data = data.data
-
-    # get the set of labels for values (result) and vendor and unit (for multilabel task)
-    label_set_results, label_set_vendor_unit = data.ner_labels, data.cls_labels
-
-    # encoders for the labels
-    label_enc_results = LabelEncoder().fit(label_set_results)
-    label_enc_vendor_unit = LabelEncoder().fit(label_set_vendor_unit)
-
-    # get tokenizer
-    tokenizer = get_tokenizer(config.model)
+    all_data = pdl1.data
 
     # get tokenized data and IOB-2 gold labeled data
-    tokenized, gold, sids = tokenize_label_data(tokenizer, all_data, label_enc_results)
+    tokenized, gold, sids = pdl1.tokenize_label_data()
 
     # convert data to train, dev, and test
     # percentage breakdown and code formatting from Kyle code
@@ -69,20 +59,10 @@ if __name__ == "__main__":
         tokenized, gold, sids, test_size=0.15, random_state=config.seed
     )
 
-    # tokenize function for dataset mapping
-    def tokize(text):
-        return tokenizer(
-            text["texts"],
-            truncation=True,
-            padding="max_length",
-            max_length=512,
-            return_tensors="pt",
-        )
-
     # generate the test dataset if needed
     # train and val done below due to nature of the tasks
     test_dataset = Dataset.from_dict({"texts": X_test, "TIUDocumentSID": ids_test})
-    test_dataset = test_dataset.map(tokize, batched=True)
+    test_dataset = test_dataset.map(pdl1.tokenize, batched=True)
 
     # convert train data into KFold splits
     splits = config.ner_num_splits
@@ -104,12 +84,12 @@ if __name__ == "__main__":
         train_dataset = Dataset.from_dict(
             {"texts": X_train, "labels": y_train, "TIUDocumentSID": ids_train}
         )
-        train_dataset = train_dataset.map(tokize, batched=True)
+        train_dataset = train_dataset.map(pdl1.tokenize, batched=True)
 
         val_dataset = Dataset.from_dict(
             {"texts": X_val, "labels": y_val, "TIUDocumentSID": ids_val}
         )
-        val_dataset = val_dataset.map(tokize, batched=True)
+        val_dataset = val_dataset.map(pdl1.tokenize, batched=True)
 
         # TRAIN THE MODEL
         # ---------------------------------------------------------
@@ -119,11 +99,12 @@ if __name__ == "__main__":
         #   and use those in the classification task
 
         # PART 1
-        ner = BERTNER(config, label_enc_results, tokenizer)
+        logging.info("Instantiating model")
+        ner = BERTNER(config, pdl1.ner_encoder, pdl1.tokenizer)
 
         # add data collator
         data_collator = DataCollatorForTokenClassification(
-            tokenizer, padding=True, return_tensors="pt"
+            pdl1.tokenizer, padding=True, return_tensors="pt"
         )
 
         ner.update_save_path(f"{config.savepath}/ner/fold_{i}")
@@ -143,19 +124,21 @@ if __name__ == "__main__":
         trainer.add_callback(CustomCallback(trainer))
 
         # train the model
+        logging.info(f"Beginning training loop for fold {i}")
         metrics = trainer.train()
 
         # get the best predictions from the model
         # to select data inputs for classification task
-        print("BEST NER PREDICTIONS ON VALIDATION SET: ")
+        print(f"BEST NER PREDICTIONS ON VALIDATION SET FOR FOLD {i}: ")
         y_pred = trainer.predict(val_dataset)
 
         # IDENTIFY ALL SAMPLES THAT WILL MOVE ON TO BE USED AS INPUT WITH NEXT MODEL
         # define a second computation
+        print(f"Identifying all data points with PDL1 values in validation set for fold {i}:")
         all_labeled_ids = id_labeled_items(
             y_pred.predictions,
             val_dataset["TIUDocumentSID"],
-            label_enc_results.transform(["O"]),
+            pdl1.ner_encoder.transform(["O"]),
         )
         all_labeled.extend(all_labeled_ids)
 
@@ -164,7 +147,8 @@ if __name__ == "__main__":
     # PART 2
     # USE THE IDENTIFIED PD-L1 INPUTS TO TRAIN A CLASSIFIER TO GET
     # VENDOR AND UNIT INFORMATION FROM THESE SAMPLES, WHEN AVAILABLE
-    classifier = BERTTextMultilabelClassifier(config, label_enc_vendor_unit, tokenizer)
+    logging.info("Instantiating classifier")
+    classifier = BERTTextSinglelabelClassifier(config, pdl1.cls_encoder, pdl1.tokenizer)
 
     # get the labeled data for train and dev partition
     # test partition already generated above
@@ -172,13 +156,14 @@ if __name__ == "__main__":
         all_labeled, test_size=0.25, random_state=config.seed
     )
 
+    logging.info("Preparing train and val datasets from data points predicted to have PD-L1 values")
     # get train data using train_ids
     # set of document SIDs was passed to split earlier
     train_df = all_data[all_data["TIUDocumentSID"].isin(train_ids)]
-    train_df = condense_df(train_df, label_enc_vendor_unit)
+    train_df = condense_df(train_df, pdl1.cls_encoder, gold_types="test")
 
     val_df = all_data[all_data["TIUDocumentSID"].isin(val_ids)]
-    val_df = condense_df(val_df, label_enc_vendor_unit)
+    val_df = condense_df(val_df, pdl1.cls_encoder, gold_types="test")
 
     # convert to dataset
     # todo: here, we need label instead of labels to run!
@@ -189,7 +174,7 @@ if __name__ == "__main__":
             "TIUDocumentSID": train_df["TIUDocumentSID"].tolist(),
         }
     )
-    train_dataset = train_dataset.map(tokize, batched=True)
+    train_dataset = train_dataset.map(pdl1.tokenize, batched=True)
 
     val_dataset = Dataset.from_dict(
         {
@@ -198,7 +183,7 @@ if __name__ == "__main__":
             "TIUDocumentSID": val_df["TIUDocumentSID"].tolist(),
         }
     )
-    val_dataset = val_dataset.map(tokize, batched=True)
+    val_dataset = val_dataset.map(pdl1.tokenize, batched=True)
 
     # instantiate trainer
     classification_trainer = Trainer(
@@ -206,29 +191,26 @@ if __name__ == "__main__":
         args=classifier.training_args,
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
-        compute_metrics=classifier.multilabel_compute_metrics,
+        compute_metrics=classifier.compute_metrics,
     )
 
+    # add callback to print train compute_metrics for train set
+    # in addition to val set
+    classification_trainer.add_callback(CustomCallback(classification_trainer))
+
     # train the model
+    logging.info("Beginning training for classification")
     classification_metrics = classification_trainer.train()
 
     print("BEST CLASSIFIER PREDICTIONS ON VALIDATION SET: ")
     y_pred = classification_trainer.predict(val_dataset)
-
-    # first, apply sigmoid on predictions which are of shape (batch_size, num_labels)
-    sigmoid = torch.nn.Sigmoid()
-    probs = sigmoid(torch.Tensor(y_pred.predictions))
-    # next, use threshold to turn them into integer predictions
-    preds = np.zeros(probs.shape)
-    # use 0.5 as a threshold for predictions
-    preds[np.where(probs >= 0.5)] = 1
+    preds = torch.argmax(torch.Tensor(y_pred.predictions), dim=1)
 
     labels = val_dataset["label"]
-    labels = [list(map(int, label)) for label in labels]
 
     # get confusion matrix
     logging.info(f"Confusion matrix on validation set: ")
-    logging.info(multilabel_confusion_matrix(labels, preds))
+    logging.info(confusion_matrix(labels, preds))
 
     # get classification report on val set
     logging.info(f"Classification report on validation set: ")
@@ -236,7 +218,8 @@ if __name__ == "__main__":
         classification_report(
             labels,
             preds,
-            target_names=label_enc_vendor_unit.classes_,
+            labels=np.array([i for i in range(len(pdl1.cls_encoder.classes_))]),
+            target_names=pdl1.cls_encoder.classes_,
             zero_division=0.0,
         )
     )
@@ -245,6 +228,7 @@ if __name__ == "__main__":
 
     # optional step to run inference on test set at the end of training
     if config.evaluate_on_test_set:
+        print("evaluate_on_test_set is set to true. Running inference on test set.")
         # warning: this doesn't use VERY best model from CV for NER
         #   only best model from last fold of CV
         #   to run on very best model, use inference.py
@@ -255,12 +239,12 @@ if __name__ == "__main__":
         test_labeled_ids = id_labeled_items(
             test_results.predictions,
             test_dataset["TIUDocumentSID"],
-            label_enc_results.transform(["O"]),
+            pdl1.ner_encoder.transform(["O"]),
         )
 
         # subset the original dataframe with these SIDs
         test_df = all_data[all_data["TIUDocumentSID"].isin(test_labeled_ids)]
-        test_df = condense_df(test_df, label_enc_vendor_unit)
+        test_df = condense_df(test_df, pdl1.cls_encoder, gold_types="test")
 
         new_test_dataset = Dataset.from_dict(
             {
@@ -269,26 +253,17 @@ if __name__ == "__main__":
                 "TIUDocumentSID": test_df["TIUDocumentSID"].tolist(),
             }
         )
-        new_test_dataset = new_test_dataset.map(tokize, batched=True)
+        new_test_dataset = new_test_dataset.map(pdl1.tokenize, batched=True)
 
         print("RESULTS OF CLASSIFICATION ON TEST DATA IDed IN STEP 1")
         cls_test_results = classification_trainer.predict(new_test_dataset)
 
-        # todo: turn this into a fuction
-        # first, apply sigmoid on predictions which are of shape (batch_size, num_labels)
-        sigmoid = torch.nn.Sigmoid()
-        probs = sigmoid(torch.Tensor(cls_test_results.predictions))
-        # next, use threshold to turn them into integer predictions
-        preds = np.zeros(probs.shape)
-        # use 0.5 as a threshold for predictions
-        preds[np.where(probs >= 0.5)] = 1
-
+        preds = torch.argmax(torch.Tensor(y_pred.predictions), dim=1)
         labels = new_test_dataset["label"]
-        labels = [list(map(int, label)) for label in labels]
 
         # get confusion matrix
         logging.info(f"Confusion matrix on test set: ")
-        logging.info(multilabel_confusion_matrix(labels, preds))
+        logging.info(confusion_matrix(labels, preds))
 
         # get classification report on val set
         logging.info(f"Classification report on test set: ")
@@ -296,7 +271,8 @@ if __name__ == "__main__":
             classification_report(
                 labels,
                 preds,
-                target_names=label_enc_vendor_unit.classes_,
+                labels=np.array([i for i in range(len(pdl1.cls_encoder.classes_))]),
+                target_names=pdl1.cls_encoder.classes_,
                 zero_division=0.0,
             )
         )

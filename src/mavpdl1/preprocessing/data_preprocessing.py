@@ -73,14 +73,21 @@ class PDL1Data:
 
         # get set of NER and classification labels
         self.ner_labels, self.cls_labels = self._get_label_set()
+        logging.info("Label set created--labels are: ")
+        logging.info("NER Labels: ")
+        logging.info(self.ner_labels.tolist())
+        logging.info("CLS Labels: ")
+        logging.info(self.cls_labels.tolist())
 
         # get tokenizer
         self.tokenizer = get_tokenizer(model)
+        logging.info(f"Tokenizer loaded from {model}")
 
         # get label encoders
         self.ner_encoder = LabelEncoder().fit(self.ner_labels)
         self.cls_encoder = LabelEncoder().fit(self.cls_labels[0] if type(self.cls_labels) == tuple else self.cls_labels)
         self.cls_encoder2 = LabelEncoder().fit(self.cls_labels[1]) if type(self.cls_labels) == tuple else None
+        logging.info("Label encoders fit")
 
     def _get_label_set(self):
         """
@@ -103,7 +110,7 @@ class PDL1Data:
         classification_label_set = []
         second_cls_label_set = None
         if self.in_classification:
-            if 'vendor' in self.in_classification:
+            if 'test' in self.in_classification:
                 classification_label_set.append("UNK_TEST")
                 classification_label_set.extend(self.data["TEST"].dropna().unique().tolist())
             if 'unit' in self.in_classification:
@@ -122,6 +129,7 @@ class PDL1Data:
                 np.array(classification_label_set)
 
     def tokenize(self, texts):
+        # tokenizes the texts in a Dataset
         return self.tokenizer(
             texts["texts"],
             truncation=True,
@@ -137,6 +145,8 @@ class PDL1Data:
         :return: tokenized input, IOB-formatted word-level ys, ids
         todo: add in functionality to accept multitask NER
         """
+        logging.info("Beginning data tokenization and NER label preparation")
+
         all_texts = []
         all_labels = []
         all_sids = []
@@ -206,6 +216,8 @@ class PDL1Data:
                 # to test code, use random uuid
                 all_sids.append(str(uuid.uuid4()))
 
+        logging.info("Tokenization and NER label preparation complete")
+
         return all_texts, all_labels, all_sids
 
     def _read_in_data(self):
@@ -214,6 +226,7 @@ class PDL1Data:
         :return:
         """
         data = pd.read_csv(self.path)
+        logging.info("Read in data")
 
         # todo: this depends on the type of task setup we have for classification
         # if we use multilabel, then this is appropriate
@@ -221,6 +234,7 @@ class PDL1Data:
         data[["TEST", "UNIT"]] = data.apply(
             lambda x: convert_label(x["LABELS"]), axis=1, result_type="expand"
         )
+        logging.info("TEST and UNIT columns created from LABELS column")
 
         # get subset of data
         # we only need start, end, annotation_index,
@@ -251,6 +265,8 @@ class PDL1Data:
                     "CANDIDATE",
                 ]
             ]
+
+        logging.info("Data read-in complete")
 
         return data
 

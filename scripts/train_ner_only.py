@@ -2,7 +2,6 @@
 
 # IMPORT STATEMENTS
 import evaluate
-import numpy as np
 import pandas as pd
 import torch
 import logging
@@ -10,9 +9,7 @@ import logging
 from transformers import Trainer, DataCollatorForTokenClassification
 from datasets import Dataset
 
-
 from sklearn.model_selection import train_test_split, KFold
-
 from sklearn.metrics import confusion_matrix
 
 from seqeval.metrics import classification_report
@@ -21,8 +18,6 @@ from config import train_config as config
 
 # from other modules here
 from mavpdl1.utils.utils import (
-    get_tokenizer,
-    tokenize_label_data,
     get_from_indexes,
     CustomCallback,
     id_labeled_items,
@@ -41,18 +36,9 @@ if __name__ == "__main__":
     pdl1 = PDL1Data(config.dataset_location,
                     model= config.model,
                     ner_classes=['unit'],
-                    classification_classes=['vendor'],
+                    classification_classes=['test'],
                     classification_type='multilabel')
     all_data = pdl1.data
-
-    # get the set of labels for values (result) and vendor and unit (for multilabel task)
-    label_set_results, label_set_vendor_unit = pdl1.ner_labels, pdl1.cls_labels
-    logging.info("Label set created--labels are: ")
-    logging.info("NER Labels: ", pdl1.ner_labels[0].tolist())
-    logging.info("CLS Labels: ", pdl1.cls_labels[0].tolist())
-
-    # encoders for the labels
-    label_enc_results = pdl1.ner_encoder
 
     # get tokenized data and IOB-2 gold labeled data
     tokenized, gold, sids = pdl1.tokenize_label_data()
@@ -112,7 +98,7 @@ if __name__ == "__main__":
         #   and use those in the classification task
 
         # PART 1
-        ner = BERTNER(config, label_enc_results, pdl1.tokenizer)
+        ner = BERTNER(config, pdl1.ner_encoder, pdl1.tokenizer)
 
         # add data collator
         data_collator = DataCollatorForTokenClassification(
@@ -147,16 +133,16 @@ if __name__ == "__main__":
         all_labeled_ids = id_labeled_items(
             y_pred.predictions,
             val_dataset["TIUDocumentSID"],
-            label_enc_results.transform(["O"]),
+            pdl1.ner_encoder.transform(["O"]),
         )
         all_labeled.extend(all_labeled_ids)
 
         predictions = torch.argmax(torch.from_numpy(y_pred.predictions), dim=2)
         labels = [list(map(int, label)) for label in val_dataset["labels"]]
 
-        true_labels = [label_enc_results.inverse_transform(label) for label in labels]
+        true_labels = [pdl1.ner_encoder.inverse_transform(label) for label in labels]
         true_predictions = [
-            label_enc_results.inverse_transform(prediction)
+            pdl1.ner_encoder.inverse_transform(prediction)
             for prediction in predictions
         ]
 
@@ -170,7 +156,7 @@ if __name__ == "__main__":
         logging.info(confusion_matrix(labels_for_confusion, preds_for_confusion))
 
         report = classification_report(true_labels, true_predictions, digits=2)
-        logging.info(label_enc_results.classes_)
+        logging.info(pdl1.ner_encoder.classes_)
 
         logging.info(report)
 
