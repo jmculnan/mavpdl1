@@ -175,3 +175,17 @@ class BERTTextSinglelabelClassifier:
             "f1": results[2],
             "accuracy": accuracy,
         }
+
+    def load_best_hyperparameters(self, best_hyperparams):
+        """
+        After performing hyperparameter search with optuna,
+        take the best hyperparams and update the trainingargs
+        to reflect them
+        :param best_hyperparams:
+        :return:
+        """
+        for param in best_hyperparams.keys():
+            try:
+                self.training_args.param = best_hyperparams[param]
+            except KeyError:
+                logging.error(f"Unknown hyperparameter {param} listed")

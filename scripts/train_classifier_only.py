@@ -26,6 +26,20 @@ from mavpdl1.model.classification_model import BERTTextSinglelabelClassifier
 seqeval = evaluate.load("seqeval")
 
 
+def optuna_hp_space(trial):
+    """
+    Get a hyperparameter space for optuna backend to use with a
+    trainer trial
+    :param trial: a trainer trial
+    :return:
+    """
+    return {
+        "learning_rate": trial.suggest_float("learning_rate", 1e-6, 1e-4, log=True),
+        "per_device_train_batch_size": trial.suggest_categorical("per_device_train_batch_size", [1, 2, 4]),
+        "num_train_epochs": trial.suggest_categorical("num_train_epochs", [1, 2, 4])
+    }
+
+
 if __name__ == "__main__":
     # PREPARE DATA
     # ---------------------------------------------------------
@@ -66,6 +80,10 @@ if __name__ == "__main__":
     logging.info("Instantiating model")
     classifier = BERTTextSinglelabelClassifier(config, pdl1.cls_encoder, pdl1.tokenizer)
 
+    # model_init function to be used in trainer
+    def model_init():
+        return classifier.model
+
     # get the labeled data for train and dev partition
     # test partition already generated above
     train_ids, val_ids = train_test_split(
@@ -102,7 +120,8 @@ if __name__ == "__main__":
 
     # instantiate trainer
     classification_trainer = Trainer(
-        model=classifier.model,
+        model_init=model_init,
+        # model=classifier.model,
         args=classifier.training_args,
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
@@ -112,13 +131,42 @@ if __name__ == "__main__":
     # in addition to val set
     classification_trainer.add_callback(CustomCallback(classification_trainer))
 
+    def compute_objective(metrics):
+        return metrics['eval_f1']
+
     # train the model
     logging.info("Beginning training for classification")
-    classification_metrics = classification_trainer.train()
+    logging.info("Hyperparameter search! ")
+    classification_metrics = classification_trainer.hyperparameter_search(
+        direction="maximize",
+        backend="optuna",
+        hp_space=optuna_hp_space,
+        n_trials=5,
+        compute_objective=compute_objective
+    )
+    logging.info("Best model parameters from hyperparameter search:")
+    logging.info(classification_metrics)
+    # classification_metrics = classification_trainer.train()
+
+    # retrain the best model parameters
+    # todo: it would be better to load the best model directly
+    logging.info("About to retrain model using best hyperparameters")
+    classifier.load_best_hyperparameters(classification_metrics.hyperparameters)
+
+    best_cls_trainer = Trainer(
+        model=classifier.model,
+        args=classifier.training_args,
+        train_dataset=train_dataset,
+        eval_dataset=val_dataset,
+        compute_metrics=classifier.compute_metrics
+    )
+
+    trained = best_cls_trainer.train()
+    logging.info("Model retrained on best hyperparameters.")
 
     logging.info("Results of our model on the validation dataset: ")
     # look at best model performance on validation dataset
-    y_pred = classification_trainer.predict(val_dataset)
+    y_pred = best_cls_trainer.predict(val_dataset)
     preds = torch.argmax(torch.Tensor(y_pred.predictions), dim=1)
 
     labels = val_dataset["label"]
