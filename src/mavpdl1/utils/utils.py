@@ -1,8 +1,7 @@
 # utilities functions for testing NER code
-import pandas as pd
+import modin.pandas as pd
 from copy import deepcopy
 import logging
-import numpy as np
 
 from transformers import BertTokenizerFast, TrainerCallback
 

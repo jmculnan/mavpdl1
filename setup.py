@@ -11,6 +11,7 @@ setuptools.setup(
     ],
     install_requires=[
         "pandas",
+        "modin",
         "torch==2.0.0",
         "datasets",
         "transformers==4.30.2",
