@@ -120,6 +120,9 @@ class BERTTextSinglelabelClassifier:
         # resize the model bc we added emebeddings to the tokenizer
         self.model.resize_token_embeddings(len(tokenizer))
 
+        # save config
+        self.config = config
+
         # put device on gpu or cpu
         self.device = torch.device("cuda" if torch.cuda.is_available() else "mps")
         self.model.to(self.device)
@@ -147,6 +150,16 @@ class BERTTextSinglelabelClassifier:
             use_mps_device=True if self.device == torch.device("mps") else False,
         )
 
+    def reinit_model(self):
+        self.model = BertForSequenceClassification.from_pretrained(
+            self.config.model,
+            num_labels=len(self.label_encoder.classes_),
+        )
+        # resize the model bc we added emebeddings to the tokenizer
+        self.model.resize_token_embeddings(len(self.tokenizer))
+
+        return self.model
+
     def compute_metrics(self, pred_targets):
         """
         :param pred_targets: An instance of class transformers.EvalPrediction;
@@ -164,10 +177,6 @@ class BERTTextSinglelabelClassifier:
             targets, preds, average="macro", zero_division=0.0
         )
         accuracy = accuracy_score(targets, preds)
-
-        # todo: this doesn't indicate whether you're getting results on
-        #   train or evaluation data -- will need to alter
-        logging.info(results)
 
         return {
             "precision": results[0],

@@ -7,6 +7,7 @@ import logging
 import torch
 
 from transformers import Trainer
+from transformers.trainer_callback import PrinterCallback
 from datasets import Dataset
 
 from sklearn.model_selection import train_test_split
@@ -18,6 +19,7 @@ from config import train_config as config
 from mavpdl1.utils.utils import (
     condense_df,
     CustomCallback,
+    # LoggerCallback
 )
 from mavpdl1.preprocessing.data_preprocessing import PDL1Data
 from mavpdl1.model.classification_model import BERTTextSinglelabelClassifier
@@ -80,10 +82,6 @@ if __name__ == "__main__":
     logging.info("Instantiating model")
     classifier = BERTTextSinglelabelClassifier(config, pdl1.cls_encoder, pdl1.tokenizer)
 
-    # model_init function to be used in trainer
-    def model_init():
-        return classifier.model
-
     # get the labeled data for train and dev partition
     # test partition already generated above
     train_ids, val_ids = train_test_split(
@@ -118,10 +116,9 @@ if __name__ == "__main__":
     )
     val_dataset = val_dataset.map(pdl1.tokenize, batched=True)
 
-    # instantiate trainer
+    # instantiate trainer for hyperparameter search
     classification_trainer = Trainer(
-        model_init=model_init,
-        # model=classifier.model,
+        model_init=classifier.reinit_model,
         args=classifier.training_args,
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
@@ -130,6 +127,7 @@ if __name__ == "__main__":
     # add callback to print train compute_metrics for train set
     # in addition to val set
     classification_trainer.add_callback(CustomCallback(classification_trainer))
+    # classification_trainer.add_callback(LoggerCallback())
 
     def compute_objective(metrics):
         return metrics['eval_f1']
@@ -163,6 +161,11 @@ if __name__ == "__main__":
 
     trained = best_cls_trainer.train()
     logging.info("Model retrained on best hyperparameters.")
+
+    metrics = trained.metrics
+
+    best_cls_trainer.log_metrics("all", metrics)
+    best_cls_trainer.save_metrics("all", metrics)
 
     logging.info("Results of our model on the validation dataset: ")
     # look at best model performance on validation dataset

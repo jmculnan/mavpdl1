@@ -58,13 +58,34 @@ class CustomCallback(TrainerCallback):
         super().__init__()
         self._trainer = trainer
 
+    def on_train_begin(self, args, state, control, **kwargs):
+        logging.info("Starting to train a new model. Hyperparameters are: ")
+        logging.info(state.trial_params)
+
     def on_epoch_end(self, args, state, control, **kwargs):
         if control.should_evaluate:
             control_copy = deepcopy(control)
-            self._trainer.evaluate(
+            train_set_results = self._trainer.evaluate(
                 eval_dataset=self._trainer.train_dataset, metric_key_prefix="train"
             )
+            dev_set_results = self._trainer.evaluate(
+                eval_dataset=self._trainer.eval_dataset, metric_key_prefix="eval"
+            )
+
+            logging.info(train_set_results)
+            logging.info(dev_set_results)
+
             return control_copy
+
+
+# class LoggerCallback(TrainerCallback):
+#     """
+#     A bare [`TrainerCallback`] that just sends the logs to logger.
+#     """
+#     def on_evaluate(self, args, state, control, logs=None, **kwargs):
+#         _ = logs.pop("total_flos", None)
+#         if state.is_local_process_zero:
+#             logging.info(logs)
 
 
 def condense_df(df, label_encoder, gold_types="both"):
