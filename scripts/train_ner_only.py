@@ -21,6 +21,7 @@ from mavpdl1.utils.utils import (
     get_from_indexes,
     CustomCallback,
     id_labeled_items,
+    optuna_hp_space
 )
 from mavpdl1.preprocessing.data_preprocessing import PDL1Data
 from mavpdl1.model.ner_model import BERTNER

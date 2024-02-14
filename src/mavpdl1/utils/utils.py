@@ -78,14 +78,18 @@ class CustomCallback(TrainerCallback):
             return control_copy
 
 
-# class LoggerCallback(TrainerCallback):
-#     """
-#     A bare [`TrainerCallback`] that just sends the logs to logger.
-#     """
-#     def on_evaluate(self, args, state, control, logs=None, **kwargs):
-#         _ = logs.pop("total_flos", None)
-#         if state.is_local_process_zero:
-#             logging.info(logs)
+def optuna_hp_space(trial):
+    """
+    Get a hyperparameter space for optuna backend to use with a
+    trainer trial
+    :param trial: a trainer trial
+    :return:
+    """
+    return {
+        "learning_rate": trial.suggest_float("learning_rate", 1e-6, 1e-4, log=True),
+        "per_device_train_batch_size": trial.suggest_categorical("per_device_train_batch_size", [1, 2, 4]),
+        "num_train_epochs": trial.suggest_categorical("num_train_epochs", [1, 2, 4])
+    }
 
 
 def condense_df(df, label_encoder, gold_types="both"):

@@ -19,27 +19,13 @@ from config import train_config as config
 from mavpdl1.utils.utils import (
     condense_df,
     CustomCallback,
-    # LoggerCallback
+    optuna_hp_space
 )
 from mavpdl1.preprocessing.data_preprocessing import PDL1Data
 from mavpdl1.model.classification_model import BERTTextSinglelabelClassifier
 
 # load seqeval in evaluate
 seqeval = evaluate.load("seqeval")
-
-
-def optuna_hp_space(trial):
-    """
-    Get a hyperparameter space for optuna backend to use with a
-    trainer trial
-    :param trial: a trainer trial
-    :return:
-    """
-    return {
-        "learning_rate": trial.suggest_float("learning_rate", 1e-6, 1e-4, log=True),
-        "per_device_train_batch_size": trial.suggest_categorical("per_device_train_batch_size", [1, 2, 4]),
-        "num_train_epochs": trial.suggest_categorical("num_train_epochs", [1, 2, 4])
-    }
 
 
 if __name__ == "__main__":
@@ -127,7 +113,6 @@ if __name__ == "__main__":
     # add callback to print train compute_metrics for train set
     # in addition to val set
     classification_trainer.add_callback(CustomCallback(classification_trainer))
-    # classification_trainer.add_callback(LoggerCallback())
 
     def compute_objective(metrics):
         return metrics['eval_f1']
@@ -144,7 +129,6 @@ if __name__ == "__main__":
     )
     logging.info("Best model parameters from hyperparameter search:")
     logging.info(classification_metrics)
-    # classification_metrics = classification_trainer.train()
 
     # retrain the best model parameters
     # todo: it would be better to load the best model directly
@@ -163,9 +147,6 @@ if __name__ == "__main__":
     logging.info("Model retrained on best hyperparameters.")
 
     metrics = trained.metrics
-
-    best_cls_trainer.log_metrics("all", metrics)
-    best_cls_trainer.save_metrics("all", metrics)
 
     logging.info("Results of our model on the validation dataset: ")
     # look at best model performance on validation dataset
