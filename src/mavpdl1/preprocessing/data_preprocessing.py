@@ -14,12 +14,12 @@
 # INAVLID_CHARS -- BOOL (only true once in sample)
 # MULTIPLE LABELS -- BOOL (always false)
 # OVERLAPS -- BOOL (alwyas false or missing)
-import logging
 
 # import statements
 import modin.pandas as pd
 import numpy as np
 import uuid
+import logging
 
 from sklearn.preprocessing import LabelEncoder
 
@@ -29,7 +29,7 @@ from mavpdl1.utils.utils import get_tokenizer
 class PDL1Data:
     def __init__(
         self,
-        path_string,
+        path_strings,
         model,
         ner_classes,
         classification_classes=None,
@@ -37,7 +37,7 @@ class PDL1Data:
     ):
         """
         An object used to load and prepare data for input into a network
-        :param path_string: The string path to the data csv
+        :param path_strings: List of string paths to the data csvs
         :param model: the model name (used to instantiate tokenizer)
         :param ner_classes: list of class types to include
             options 'vendor', 'unit', 'result'
@@ -71,7 +71,7 @@ class PDL1Data:
             - in_classification = ['test']
             - classification_type is ignored
         """
-        self.path = path_string
+        self.path = path_strings
         self.data = self._read_in_data()
 
         self.in_ner = ner_classes
@@ -272,15 +272,30 @@ class PDL1Data:
         Read in the data
         :return:
         """
-        data = pd.read_csv(self.path)
-        logging.info("Read in data")
+        data = None
+        logging.info("Reading in data")
+        if len(self.path) == 0:
+            logging.error("No data to read in")
+        elif type(self.path) != list:
+            logging.error("Data is not provided as a list!")
+        for strpath in self.path:
+            if type(strpath) != str:
+                logging.error(f"Path {str(strpath)} is not a string; this data cannot be read in")
+            if data is None:
+                data = pd.read_csv(strpath)
+            else:
+                data = pd.concat([data, pd.read_csv(strpath)])
+
+        logging.info("Finished reading data.")
 
         # todo: this depends on the type of task setup we have for classification
         # if we use multilabel, then this is appropriate
         # if not,
-        data[["TEST", "UNIT"]] = data.apply(
-            lambda x: convert_label(x["LABELS"]), axis=1, result_type="expand"
-        )
+        TEST_UNIT = data["LABELS"].apply(lambda x: convert_label(x) if x else (None, None))
+        TEST = [x[0] if x else None for x in TEST_UNIT]
+        UNIT = [x[1] if x else None for x in TEST_UNIT]
+        data["TEST"] = TEST
+        data["UNIT"] = UNIT
         logging.info("TEST and UNIT columns created from LABELS column")
 
         # get subset of data
@@ -296,7 +311,7 @@ class PDL1Data:
                     "TEST",
                     "UNIT",
                     "CANDIDATE",
-                    "TIUDocumentSID",
+                    "LABELS",
                 ]
             ]
         # if the TIUDocumentSID is not present
@@ -313,7 +328,7 @@ class PDL1Data:
                 ]
             ]
 
-        logging.info("Data read-in complete")
+        logging.info("Data read-in and TEST, UNIT column creation complete")
 
         return data
 
