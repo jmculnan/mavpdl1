@@ -42,7 +42,7 @@ if __name__ == "__main__":
     all_data = pdl1.data
 
     # get tokenized data and IOB-2 gold labeled data
-    tokenized, gold, sids = pdl1.tokenize_label_data()
+    tokenized, gold = pdl1.tokenize_label_data()
 
     # convert data to train, dev, and test
     # percentage breakdown and code formatting from Kyle code
@@ -51,15 +51,13 @@ if __name__ == "__main__":
         X_test,
         y_train_full,
         y_test,
-        ids_train_full,
-        ids_test,
     ) = train_test_split(
-        tokenized, gold, sids, test_size=0.15, random_state=config.seed
+        tokenized, gold, test_size=0.15, random_state=config.seed
     )
 
     # generate the test dataset if needed
     # train and val done below due to nature of the tasks
-    test_dataset = Dataset.from_dict({"texts": X_test, "TIUDocumentSID": ids_test})
+    test_dataset = Dataset.from_dict({"texts": X_test, "label": y_test})
     test_dataset = test_dataset.map(pdl1.tokenize, batched=True)
 
     # PART 2
@@ -71,15 +69,15 @@ if __name__ == "__main__":
     # get the labeled data for train and dev partition
     # test partition already generated above
     train_ids, val_ids = train_test_split(
-        ids_train_full, test_size=0.25, random_state=config.seed
+        X_train_full, test_size=0.25, random_state=config.seed
     )
 
     # get train data using train_ids
     # set of document SIDs was passed to split earlier
-    train_df = all_data[all_data["TIUDocumentSID"].isin(train_ids)]
+    train_df = all_data[all_data["CANDIDATE"].isin(train_ids)]
     train_df = condense_df(train_df, pdl1.cls_encoder, gold_types="test")
 
-    val_df = all_data[all_data["TIUDocumentSID"].isin(val_ids)]
+    val_df = all_data[all_data["CANDIDATE"].isin(val_ids)]
     val_df = condense_df(val_df, pdl1.cls_encoder, gold_types="test")
 
     # convert to dataset
@@ -88,7 +86,6 @@ if __name__ == "__main__":
         {
             "texts": train_df["CANDIDATE"].tolist(),
             "label": train_df["GOLD"].tolist(),
-            "TIUDocumentSID": train_df["TIUDocumentSID"].tolist(),
         }
     )
     train_dataset = train_dataset.map(pdl1.tokenize, batched=True)
@@ -97,7 +94,6 @@ if __name__ == "__main__":
         {
             "texts": val_df["CANDIDATE"].tolist(),
             "label": val_df["GOLD"].tolist(),
-            "TIUDocumentSID": val_df["TIUDocumentSID"].tolist(),
         }
     )
     val_dataset = val_dataset.map(pdl1.tokenize, batched=True)

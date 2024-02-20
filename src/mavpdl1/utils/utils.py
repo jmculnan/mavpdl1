@@ -1,5 +1,5 @@
 # utilities functions for testing NER code
-import modin.pandas as pd
+import pandas as pd
 from copy import deepcopy
 import logging
 
@@ -112,7 +112,7 @@ def condense_df(df, label_encoder, gold_types="both"):
 
     listed = ["TEST", "UNIT"]
     condensed = (
-        df.groupby(["TIUDocumentSID", "CANDIDATE"])[listed].agg(set).reset_index()
+        df.groupby(["CANDIDATE"])[listed].agg(set).reset_index()
     )
 
     if gold_types == "both":

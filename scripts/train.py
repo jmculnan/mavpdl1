@@ -46,7 +46,7 @@ if __name__ == "__main__":
     all_data = pdl1.data
 
     # get tokenized data and IOB-2 gold labeled data
-    tokenized, gold, sids = pdl1.tokenize_label_data()
+    tokenized, gold = pdl1.tokenize_label_data()
 
     # convert data to train, dev, and test
     # percentage breakdown and code formatting from Kyle code
@@ -55,15 +55,13 @@ if __name__ == "__main__":
         X_test,
         y_train_full,
         y_test,
-        ids_train_full,
-        ids_test,
     ) = train_test_split(
-        tokenized, gold, sids, test_size=0.15, random_state=config.seed
+        tokenized, gold, test_size=0.15, random_state=config.seed
     )
 
     # generate the test dataset if needed
     # train and val done below due to nature of the tasks
-    test_dataset = Dataset.from_dict({"texts": X_test, "TIUDocumentSID": ids_test})
+    test_dataset = Dataset.from_dict({"texts": X_test, "label": y_test})
     test_dataset = test_dataset.map(pdl1.tokenize, batched=True)
 
     # convert train data into KFold splits
@@ -79,17 +77,16 @@ if __name__ == "__main__":
     for i, (train_index, test_index) in enumerate(folds.split(idxs)):
         X_train, X_val = get_from_indexes(X_train_full, train_index, test_index)
         y_train, y_val = get_from_indexes(y_train_full, train_index, test_index)
-        ids_train, ids_val = get_from_indexes(ids_train_full, train_index, test_index)
 
         # todo: kyle code used `label` but on CPU would not train
         #   unless i changed it to `labels`
         train_dataset = Dataset.from_dict(
-            {"texts": X_train, "labels": y_train, "TIUDocumentSID": ids_train}
+            {"texts": X_train, "labels": y_train}
         )
         train_dataset = train_dataset.map(pdl1.tokenize, batched=True)
 
         val_dataset = Dataset.from_dict(
-            {"texts": X_val, "labels": y_val, "TIUDocumentSID": ids_val}
+            {"texts": X_val, "labels": y_val}
         )
         val_dataset = val_dataset.map(pdl1.tokenize, batched=True)
 
@@ -141,7 +138,7 @@ if __name__ == "__main__":
         )
         all_labeled_ids = id_labeled_items(
             y_pred.predictions,
-            val_dataset["TIUDocumentSID"],
+            val_dataset["texts"],
             pdl1.ner_encoder.transform(["O"]),
         )
         all_labeled.extend(all_labeled_ids)
@@ -165,10 +162,10 @@ if __name__ == "__main__":
     )
     # get train data using train_ids
     # set of document SIDs was passed to split earlier
-    train_df = all_data[all_data["TIUDocumentSID"].isin(train_ids)]
+    train_df = all_data[all_data["CANDIDATE"].isin(train_ids)]
     train_df = condense_df(train_df, pdl1.cls_encoder, gold_types="test")
 
-    val_df = all_data[all_data["TIUDocumentSID"].isin(val_ids)]
+    val_df = all_data[all_data["CANDIDATE"].isin(val_ids)]
     val_df = condense_df(val_df, pdl1.cls_encoder, gold_types="test")
 
     # convert to dataset
@@ -177,7 +174,6 @@ if __name__ == "__main__":
         {
             "texts": train_df["CANDIDATE"].tolist(),
             "label": train_df["GOLD"].tolist(),
-            "TIUDocumentSID": train_df["TIUDocumentSID"].tolist(),
         }
     )
     train_dataset = train_dataset.map(pdl1.tokenize, batched=True)
@@ -186,7 +182,6 @@ if __name__ == "__main__":
         {
             "texts": val_df["CANDIDATE"].tolist(),
             "label": val_df["GOLD"].tolist(),
-            "TIUDocumentSID": val_df["TIUDocumentSID"].tolist(),
         }
     )
     val_dataset = val_dataset.map(pdl1.tokenize, batched=True)
@@ -244,19 +239,18 @@ if __name__ == "__main__":
         # get only the items that were IDed as containing PD-L1 value
         test_labeled_ids = id_labeled_items(
             test_results.predictions,
-            test_dataset["TIUDocumentSID"],
+            test_dataset["texts"],
             pdl1.ner_encoder.transform(["O"]),
         )
 
         # subset the original dataframe with these SIDs
-        test_df = all_data[all_data["TIUDocumentSID"].isin(test_labeled_ids)]
+        test_df = all_data[all_data["CANDIDATE"].isin(test_labeled_ids)]
         test_df = condense_df(test_df, pdl1.cls_encoder, gold_types="test")
 
         new_test_dataset = Dataset.from_dict(
             {
                 "texts": test_df["CANDIDATE"].tolist(),
                 "label": test_df["GOLD"].tolist(),
-                "TIUDocumentSID": test_df["TIUDocumentSID"].tolist(),
             }
         )
         new_test_dataset = new_test_dataset.map(pdl1.tokenize, batched=True)

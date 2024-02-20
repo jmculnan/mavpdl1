@@ -22,8 +22,8 @@ outname = "first_file"
 experiment_no = "1"
 expname = f"{experiment_no}_{outname}"
 
-# dataset used
-dataset_location = "/Users/jculnan/va_data/pdl1_annotations-100_deidentified_fakeuuids.csv"
+# provide list of paths to data documents
+dataset_location = ["/Users/jculnan/va_data/pdl1_annotations-100_deidentified_fakeuuids.csv"]
 # dataset_location = "/Users/jculnan/va_data/pdl1_annotations-10_deidentified.csv"
 # model
 model = "allenai/scibert_scivocab_uncased"

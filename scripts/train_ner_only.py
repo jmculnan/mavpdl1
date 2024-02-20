@@ -44,7 +44,7 @@ if __name__ == "__main__":
     all_data = pdl1.data
 
     # get tokenized data and IOB-2 gold labeled data
-    tokenized, gold, sids = pdl1.tokenize_label_data()
+    tokenized, gold= pdl1.tokenize_label_data()
 
     # convert data to train, dev, and test
     # percentage breakdown and code formatting from Kyle code
@@ -53,15 +53,13 @@ if __name__ == "__main__":
         X_test,
         y_train_full,
         y_test,
-        ids_train_full,
-        ids_test,
     ) = train_test_split(
-        tokenized, gold, sids, test_size=0.15, random_state=config.seed
+        tokenized, gold, test_size=0.15, random_state=config.seed
     )
 
     # generate the test dataset if needed
     # train and val done below due to nature of the tasks
-    test_dataset = Dataset.from_dict({"texts": X_test, "TIUDocumentSID": ids_test})
+    test_dataset = Dataset.from_dict({"texts": X_test, "label": y_test})
     test_dataset = test_dataset.map(pdl1.tokenize, batched=True)
 
     # convert train data into KFold splits
@@ -79,17 +77,16 @@ if __name__ == "__main__":
 
         X_train, X_val = get_from_indexes(X_train_full, train_index, test_index)
         y_train, y_val = get_from_indexes(y_train_full, train_index, test_index)
-        ids_train, ids_val = get_from_indexes(ids_train_full, train_index, test_index)
 
         # todo: kyle code used `label` but on CPU would not train
         #   unless i changed it to `labels`
         train_dataset = Dataset.from_dict(
-            {"texts": X_train, "labels": y_train, "TIUDocumentSID": ids_train}
+            {"texts": X_train, "labels": y_train}
         )
         train_dataset = train_dataset.map(pdl1.tokenize, batched=True)
 
         val_dataset = Dataset.from_dict(
-            {"texts": X_val, "labels": y_val, "TIUDocumentSID": ids_val}
+            {"texts": X_val, "labels": y_val}
         )
         val_dataset = val_dataset.map(pdl1.tokenize, batched=True)
 
@@ -135,7 +132,7 @@ if __name__ == "__main__":
         # define a second computation
         all_labeled_ids = id_labeled_items(
             y_pred.predictions,
-            val_dataset["TIUDocumentSID"],
+            val_dataset["texts"],
             pdl1.ner_encoder.transform(["O"]),
         )
         all_labeled.extend(all_labeled_ids)
@@ -163,7 +160,7 @@ if __name__ == "__main__":
         logging.info(report)
 
     # save the list of all documents containing PD-L1 values according to the model
-    labeled_df = pd.DataFrame(all_labeled, columns=["TIUDocumentSID"])
+    labeled_df = pd.DataFrame(all_labeled, columns=["CANDIDATE"])
     labeled_df.to_csv(
         f"{config.savepath}/all_documents_with_IDed_pdl1_values.csv", index=False
     )

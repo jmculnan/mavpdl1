@@ -16,9 +16,8 @@
 # OVERLAPS -- BOOL (alwyas false or missing)
 
 # import statements
-import modin.pandas as pd
+import pandas as pd
 import numpy as np
-import uuid
 import logging
 
 from sklearn.preprocessing import LabelEncoder
@@ -169,7 +168,6 @@ class PDL1Data:
 
         all_texts = []
         all_labels = []
-        all_sids = []
 
         for i, row in self.data.iterrows():
             # check if the row is a second annotation of the same example
@@ -179,7 +177,7 @@ class PDL1Data:
             ):
                 tokenized = all_texts[-1]
                 labels = all_labels[-1]
-                del all_texts[-1], all_labels[-1], all_sids[-1]
+                del all_texts[-1], all_labels[-1]
             else:
                 # tokenize the item
                 tokenized = self.tokenizer.tokenize(row["CANDIDATE"])
@@ -253,19 +251,13 @@ class PDL1Data:
 
             # add tokenized data + labels to full lists
             all_texts.append(row["CANDIDATE"])
+
             # convert to long to try to keep it from changing during training
             all_labels.append(labels)
-            # todo: TIUDocumentSID is NOT unique in the main dataset
-            if "TIUDocumentSID" in self.data.columns:
-                all_sids.append(row["TIUDocumentSID"])
-            else:
-                # todo: remove after getting full data
-                # to test code, use random uuid
-                all_sids.append(str(uuid.uuid4()))
 
         logging.info("Tokenization and NER label preparation complete")
 
-        return all_texts, all_labels, all_sids
+        return all_texts, all_labels
 
     def _read_in_data(self):
         """
@@ -288,9 +280,7 @@ class PDL1Data:
 
         logging.info("Finished reading data.")
 
-        # todo: this depends on the type of task setup we have for classification
-        # if we use multilabel, then this is appropriate
-        # if not,
+        # separate test_unit labels into test and unit columns
         TEST_UNIT = data["LABELS"].apply(lambda x: convert_label(x) if x else (None, None))
         TEST = [x[0] if x else None for x in TEST_UNIT]
         UNIT = [x[1] if x else None for x in TEST_UNIT]
@@ -301,32 +291,18 @@ class PDL1Data:
         # get subset of data
         # we only need start, end, annotation_index,
         # test, unit, annotation, and candidate
-        try:
-            data = data[
-                [
-                    "START",
-                    "END",
-                    "ANNOTATION_INDEX",
-                    "ANNOTATION",
-                    "TEST",
-                    "UNIT",
-                    "CANDIDATE",
-                    "LABELS",
-                ]
+        data = data[
+            [
+                "START",
+                "END",
+                "ANNOTATION_INDEX",
+                "ANNOTATION",
+                "TEST",
+                "UNIT",
+                "CANDIDATE",
+                "LABELS",
             ]
-        # if the TIUDocumentSID is not present
-        except ValueError:
-            data = data[
-                [
-                    "START",
-                    "END",
-                    "ANNOTATION_INDEX",
-                    "ANNOTATION",
-                    "TEST",
-                    "UNIT",
-                    "CANDIDATE",
-                ]
-            ]
+        ]
 
         logging.info("Data read-in and TEST, UNIT column creation complete")
 
