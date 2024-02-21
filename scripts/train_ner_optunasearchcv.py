@@ -75,7 +75,7 @@ if __name__ == "__main__":
     # having a PD-L1 value
     all_labeled = []
 
-    ner_model = BertTokenClassifier('scibert-scivocab-uncased')
+    ner_model = BertTokenClassifier('scibert-scivocab-uncased', logfile=f"{config.savepath}/optuna.log")
 
     # set the possible search space
     # these names come from the sklearn-bert BertBaseEstimator class keywords
@@ -86,7 +86,7 @@ if __name__ == "__main__":
     }
 
     # set optuna search cv
-    optuna_search = OptunaSearchCV(ner_model, param_distributions, cv=5, n_trials=5)
+    optuna_search = OptunaSearchCV(ner_model, param_distributions, cv=5, n_trials=1)
 
     optuna_search.fit(X_train_full, y_train_full)
 
