@@ -22,6 +22,7 @@ from mavpdl1.utils.utils import (
     get_from_indexes,
     CustomCallback,
     id_labeled_items,
+    calc_best_hyperparams
 )
 
 from mavpdl1.preprocessing.data_preprocessing import PDL1Data
@@ -29,41 +30,6 @@ from mavpdl1.model.ner_model import BERTNER
 
 # load seqeval in evaluate
 seqeval = evaluate.load("seqeval")
-
-
-def calc_best_hyperparams(list_of_param_dicts):
-    """
-    Using the best hyperparameters of each inner loop,
-    as determined by outer loop holdout performance,
-    find best parameters through averaging
-    :param list_of_param_dicts:
-    :return:
-    """
-    # names of hyperparameters that must be ints
-    # todo: add others as needed
-    logging.info("There are currently only two hyperparameters listed"
-                 "as needing to be ints. If you include a hyperparameter"
-                 "in the search that needs to be an int and is NOT "
-                 "number of train epochs or per device train batch size, "
-                 "please add this to 'int_params' in function"
-                 "calc_best_hyperparams")
-    int_params = ["num_train_epochs", "per_device_train_batch_size"]
-    # holder for best parameters
-    best_params = {}
-    for param_dict in list_of_param_dicts:
-        for param, p_val in param_dict.items():
-            if param not in best_params:
-                best_params[param] = [p_val]
-            else:
-                best_params[param].append(p_val)
-    for param in best_params.keys():
-        if param in int_params:
-            p_val = round(sum(best_params[param]) / float(len(best_params[param])))
-        else:
-            p_val = sum(best_params[param]) / float(len(best_params[param]))
-        best_params[param] = p_val
-
-    return best_params
 
 
 if __name__ == "__main__":
@@ -97,15 +63,6 @@ if __name__ == "__main__":
     # train and val done below due to nature of the tasks
     test_dataset = Dataset.from_dict({"texts": X_test, "label": y_test})
     test_dataset = test_dataset.map(pdl1.tokenize, batched=True)
-
-    # # generate train and dev for initial hyperparameter search
-    # (
-    #     X_train,
-    #     X_val,
-    #     y_train,
-    #     y_val) = train_test_split(
-    #     X_train_full, y_train_full, test_size=0.2, random_state=config.seed
-    # )
 
     # convert train data into KFold splits
     splits = config.ner_num_splits

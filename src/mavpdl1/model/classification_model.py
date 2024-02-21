@@ -136,8 +136,8 @@ class BERTTextSinglelabelClassifier:
         # set training args
         self.training_args = TrainingArguments(
             output_dir=f"{config.savepath}/classifier",
-            num_train_epochs=config.cls_num_epochs,
-            per_device_train_batch_size=config.cls_per_device_train_batch_size,
+            num_train_epochs=config.cls_num_epochs[0],
+            per_device_train_batch_size=config.cls_per_device_train_batch_size[0],
             per_device_eval_batch_size=config.cls_per_device_eval_batch_size,
             evaluation_strategy=config.evaluation_strategy,
             save_strategy=config.save_strategy,

@@ -7,7 +7,6 @@ import logging
 import torch
 
 from transformers import Trainer
-from transformers.trainer_callback import PrinterCallback
 from datasets import Dataset
 
 from sklearn.model_selection import train_test_split
@@ -19,13 +18,27 @@ from config import train_config as config
 from mavpdl1.utils.utils import (
     condense_df,
     CustomCallback,
-    optuna_hp_space
 )
 from mavpdl1.preprocessing.data_preprocessing import PDL1Data
 from mavpdl1.model.classification_model import BERTTextSinglelabelClassifier
 
 # load seqeval in evaluate
 seqeval = evaluate.load("seqeval")
+
+
+def compute_objective(metrics):
+    return metrics['eval_f1']
+
+
+# set optuna hyperparameter space
+def optuna_hp_space(trial):
+    return {
+        "learning_rate": trial.suggest_float("learning_rate", config.cls_lr_min, config.cls_lr_max, log=True),
+        "per_device_train_batch_size": trial.suggest_categorical(
+            "per_device_train_batch_size",
+            config.cls_per_device_train_batch_size
+        ),
+        "num_train_epochs": trial.suggest_categorical("num_train_epochs", config.cls_num_epochs)}
 
 
 if __name__ == "__main__":
@@ -109,9 +122,6 @@ if __name__ == "__main__":
     # add callback to print train compute_metrics for train set
     # in addition to val set
     classification_trainer.add_callback(CustomCallback(classification_trainer))
-
-    def compute_objective(metrics):
-        return metrics['eval_f1']
 
     # train the model
     logging.info("Beginning training for classification")

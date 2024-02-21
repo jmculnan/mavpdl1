@@ -36,8 +36,8 @@ class BERTNER:
         # set training args
         self.training_args = TrainingArguments(
             output_dir=config.savepath,
-            num_train_epochs=config.ner_num_epochs,
-            per_device_train_batch_size=config.ner_per_device_train_batch_size,
+            num_train_epochs=config.ner_num_epochs[0],
+            per_device_train_batch_size=config.ner_per_device_train_batch_size[0],
             per_device_eval_batch_size=config.ner_per_device_eval_batch_size,
             evaluation_strategy=config.evaluation_strategy,
             save_strategy=config.save_strategy,
