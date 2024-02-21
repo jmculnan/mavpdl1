@@ -52,6 +52,16 @@ class BERTNER:
             use_mps_device=True if self.device == torch.device("mps") else False,
         )
 
+    def reinit_model(self):
+        self.model = BertForTokenClassification.from_pretrained(
+            self.config.model,
+            num_labels=len(self.label_encoder.classes_),
+        )
+        # resize the model bc we added emebeddings to the tokenizer
+        self.model.resize_token_embeddings(len(self.tokenizer))
+
+        return self.model
+
     def compute_metrics(self, pred_targets):
         """
         From Kyle code
@@ -75,16 +85,26 @@ class BERTNER:
         # get results and return them
         results = seqeval.compute(predictions=true_predictions, references=true_labels)
 
-        # todo: this doesn't indicate whether you're getting results on
-        #   train or evaluation data -- will need to alter
-        logging.info(results)
-
         return {
             "precision": results["overall_precision"],
             "recall": results["overall_recall"],
             "f1": results["overall_f1"],
             "accuracy": results["overall_accuracy"],
         }
+
+    def load_best_hyperparameters(self, best_hyperparams):
+        """
+        After performing hyperparameter search with optuna,
+        take the best hyperparams and update the trainingargs
+        to reflect them
+        :param best_hyperparams:
+        :return:
+        """
+        for param in best_hyperparams.keys():
+            try:
+                self.training_args.param = best_hyperparams[param]
+            except KeyError:
+                logging.error(f"Unknown hyperparameter {param} listed")
 
     def update_save_path(self, new_path):
         self.training_args.output_dir = new_path
