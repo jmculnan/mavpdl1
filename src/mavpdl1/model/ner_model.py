@@ -52,6 +52,8 @@ class BERTNER:
             use_mps_device=True if self.device == torch.device("mps") else False,
         )
 
+        self.best_hyperparameters = None
+
     def reinit_model(self):
         self.model = BertForTokenClassification.from_pretrained(
             self.config.model,
@@ -105,6 +107,17 @@ class BERTNER:
                 self.training_args.param = best_hyperparams[param]
             except KeyError:
                 logging.error(f"Unknown hyperparameter {param} listed")
+
+    def load_new_hyperparameters(self, best_hyperparams):
+        self.load_best_hyperparameters(best_hyperparams)
+
+    def save_best_hyperparameters(self, best_hyperparams):
+        """
+        To manually save the best hyperparameters for later loading
+        :param best_hyperparams:
+        :return:
+        """
+        self.best_hyperparameters = best_hyperparams
 
     def update_save_path(self, new_path):
         self.training_args.output_dir = new_path
