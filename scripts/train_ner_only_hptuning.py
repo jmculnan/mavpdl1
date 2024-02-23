@@ -3,6 +3,7 @@
 # IMPORT STATEMENTS
 import evaluate
 import pandas as pd
+import numpy as np
 import torch
 import logging
 import random
@@ -20,7 +21,7 @@ from config import train_config as config
 # from other modules here
 from mavpdl1.utils.utils import (
     get_from_indexes,
-    CustomCallback,
+    CustomCallbackNER,
     id_labeled_items,
     calc_best_hyperparams
 )
@@ -101,7 +102,12 @@ if __name__ == "__main__":
         inner_folds = KFold(n_splits=config.ner_num_splits, random_state=config.seed, shuffle=True)
         inner_idxs = range(len(X_train))
 
-        # set validation dataset for the outer loop
+        # set datasets for the outer loop
+        train_dataset_outer = Dataset.from_dict(
+            {"texts": X_train, "labels":y_train}
+        )
+        train_dataset_outer = train_dataset_outer.map(pdl1.tokenize, batched=True)
+
         val_dataset_outer = Dataset.from_dict(
             {"texts": X_val, "labels": y_val}
         )
@@ -109,36 +115,13 @@ if __name__ == "__main__":
 
         best_f1 = -1.0
 
-        # create inner loop for nested CV
-        for j, (inner_train_idx, inner_test_idx) in enumerate(inner_folds.split(inner_idxs)):
-            logging.info(f"Beginning hyperparameter tuning on INNER fold {j}")
+        # holder for best hyperparameters in the inner loop
+        inner_best_hyperparameters = []
 
-            X_train_inner, X_val_inner = get_from_indexes(X_train, inner_train_idx, inner_test_idx)
-            y_train_inner, y_val_inner = get_from_indexes(y_train, inner_train_idx, inner_test_idx)
-
-            # todo: kyle code used `label` but on CPU would not train
-            #   unless i changed it to `labels`
-            train_dataset_inner = Dataset.from_dict(
-                {"texts": X_train_inner, "labels": y_train_inner}
-            )
-            train_dataset_inner = train_dataset_inner.map(pdl1.tokenize, batched=True)
-
-            val_dataset_inner = Dataset.from_dict(
-                {"texts": X_val_inner, "labels": y_val_inner}
-            )
-            val_dataset_inner = val_dataset_inner.map(pdl1.tokenize, batched=True)
-
-            # TRAIN THE MODEL
-            # ---------------------------------------------------------
-            # we need this to be a 2 part model
-            # part 1: IOB NER task over the data to ID results; this will need to be trained as a first step
-            # part 2: AFTER training the NER system, we need to select only those items IDed by the NER
-            #   and use those in the classification task
-            ner.update_save_path(f"{config.savepath}/ner/fold_{i}")
-            ner.update_log_path(f"{config.ner_logging_dir}/fold_{i}")
-
-            # reinit the model
-            ner.reinit_model()
+        # run hyperparameter selection over the inner folds
+        # this will be done using manually-created random search
+        for k in range(config.num_trials_in_hyperparameter_search):
+            logging.info(f"Now beginning hyperparameter search trial {k} on inner folds for fold {i}")
 
             if i == 0:
                 # generate hyperparameters randomly
@@ -151,48 +134,116 @@ if __name__ == "__main__":
 
                 # add these to the used_hyperparameters holder
                 used_hyperparameters.append(new_hyperparams)
-                logging.info("HERE ARE THE USED HYPERPARAMETERS")
-                logging.info(used_hyperparameters)
 
             else:
                 print(used_hyperparameters)
                 # get hyperparameters from used_hyperparameters
-                new_hyperparams = used_hyperparameters[j]
+                new_hyperparams = used_hyperparameters[k]
 
-            logging.info(f"Hyperparameters for fold {i}, inner fold {j}:")
+            logging.info(f"Hyperparameters trial {k} for split {i}:")
             logging.info(new_hyperparams)
 
             # add new hyperparameters to model training args
             ner.load_new_hyperparameters(new_hyperparams)
 
-            # set up trainer
-            trainer = Trainer(
-                model=ner.model,
-                args=ner.training_args,
-                train_dataset=train_dataset_inner,
-                data_collator=data_collator,
-                eval_dataset=val_dataset_inner,
-                compute_metrics=ner.compute_metrics,
-            )
-            # add callback to print train compute_metrics for train set
-            # in addition to val set
-            trainer.add_callback(CustomCallback(trainer))
+            # holders for predictions and y labels
+            # used to calculate performance for each set of hyperparameters
+            all_preds = []
+            all_ys = []
 
-            logging.info("Beginning training loop")
-            inner_trained = trainer.train()
+            # create inner loop for nested CV
+            for j, (inner_train_idx, inner_test_idx) in enumerate(inner_folds.split(inner_idxs)):
+                logging.info(f"Beginning hyperparameter tuning on INNER fold {j}")
 
-            # get predictions on val dataset from outer loop
-            y_pred = trainer.predict(val_dataset_outer)
-            labels = val_dataset_outer["labels"]
-            metrics = ner.compute_metrics([y_pred.predictions, labels])
+                X_train_inner, X_val_inner = get_from_indexes(X_train, inner_train_idx, inner_test_idx)
+                y_train_inner, y_val_inner = get_from_indexes(y_train, inner_train_idx, inner_test_idx)
 
-            logging.info("Results of inner loop hyperparameters on outer loop holdout")
+                # todo: kyle code used `label` but on CPU would not train
+                #   unless i changed it to `labels`
+                train_dataset_inner = Dataset.from_dict(
+                    {"texts": X_train_inner, "labels": y_train_inner}
+                )
+                train_dataset_inner = train_dataset_inner.map(pdl1.tokenize, batched=True)
+
+                val_dataset_inner = Dataset.from_dict(
+                    {"texts": X_val_inner, "labels": y_val_inner}
+                )
+                val_dataset_inner = val_dataset_inner.map(pdl1.tokenize, batched=True)
+
+                #   and use those in the classification task
+                ner.update_save_path(f"{config.savepath}/ner/fold_{i}_inner{j}_trial{k}")
+                ner.update_log_path(f"{config.ner_logging_dir}/fold_{i}_inner{j}_trial{k}")
+
+                # reinit the model
+                ner.reinit_model()
+
+                # set up trainer
+                trainer = Trainer(
+                    model=ner.model,
+                    args=ner.training_args,
+                    train_dataset=train_dataset_inner,
+                    data_collator=data_collator,
+                    eval_dataset=val_dataset_inner,
+                    compute_metrics=ner.compute_metrics,
+                )
+                # add callback to print train compute_metrics for train set
+                # in addition to val set
+                trainer.add_callback(CustomCallbackNER(trainer))
+
+                logging.info("Beginning training loop")
+                inner_trained = trainer.train()
+
+                # get preds on inner loop
+                preds = trainer.predict(val_dataset_inner).predictions
+                all_preds.extend(preds)
+                all_ys.extend(val_dataset_inner["labels"])
+
+            # get predictions on all partitions of inner loop
+            # used to determine which hyperparameters are best
+            metrics = ner.compute_metrics([np.asarray(all_preds), np.asarray(all_ys)])
+            logging.info("Results of inner loop hyperparameter search for these hyperparameters:")
             logging.info(metrics)
-
-            # record these hyperparameters if they improve performance
             if metrics["f1"] > best_f1:
                 ner.save_best_hyperparameters(new_hyperparams)
                 best_f1 = metrics["f1"]
+
+        logging.info("======================================")
+        logging.info(f"Best hyperparameters on inner loop for fold {i}")
+        logging.info(ner.best_hyperparameters)
+        logging.info("======================================")
+        outer_best_hyperparams.append(ner.best_hyperparameters)
+
+        # retrain best hyperparameters on OUTER loop
+        #   and use those in the classification task
+        ner.update_save_path(f"{config.savepath}/ner/fold_{i}_bestparams")
+        ner.update_log_path(f"{config.ner_logging_dir}/fold_{i}_bestparams")
+
+        # reinit the model
+        ner.reinit_model()
+
+        # set up trainer
+        trainer = Trainer(
+            model=ner.model,
+            args=ner.training_args,
+            train_dataset=train_dataset_outer,
+            data_collator=data_collator,
+            eval_dataset=val_dataset_outer,
+            compute_metrics=ner.compute_metrics,
+        )
+        # add callback to print train compute_metrics for train set
+        # in addition to val set
+        trainer.add_callback(CustomCallbackNER(trainer))
+
+        logging.info("Beginning training loop")
+        inner_trained = trainer.train()
+
+        # get predictions on val dataset from outer loop
+        y_pred = trainer.predict(val_dataset_outer)
+        labels = val_dataset_outer["labels"]
+        metrics = ner.compute_metrics([y_pred.predictions, labels])
+
+        logging.info("Results of inner loop best hyperparameters on outer loop holdout")
+        logging.info(metrics)
 
         # save the best hyperparameters from this inner loop
         outer_best_hyperparams.append(ner.best_hyperparameters)
@@ -276,7 +327,8 @@ if __name__ == "__main__":
         logging.info(report)
 
     # save the list of all documents containing PD-L1 values according to the model
-    labeled_df = pd.DataFrame(all_labeled, columns=["CANDIDATE"])
-    labeled_df.to_csv(
-        f"{config.savepath}/all_documents_with_IDed_pdl1_values.csv", index=False
-    )
+    if config.save_ner_predicted_items_df:
+        labeled_df = pd.DataFrame(all_labeled, columns=["CANDIDATE"])
+        labeled_df.to_csv(
+            f"{config.savepath}/all_documents_with_IDed_pdl1_values.csv", index=False
+        )

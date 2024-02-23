@@ -77,6 +77,11 @@ ner_per_device_eval_batch_size = 64
 ner_logging_dir = f'{savepath}/ner/logs'
 ner_num_splits = 3
 ner_weight_decay = 0.001
+# whether to save the items IDed as having PDL1 values
+# this saves the text of each item with 1+ value found
+save_ner_predicted_items_df = False  # only needed for train_ner_only_hptuning
+# the number of trials to use in hyperparameter search
+num_trials_in_hyperparameter_search = 5
 
 # parameters for hyperparameter tuning
 ner_num_epochs = [1, 2, 4]

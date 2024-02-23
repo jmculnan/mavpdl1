@@ -85,7 +85,9 @@ class BERTNER:
         true_labels = [self.label_encoder.inverse_transform(label) for label in targets]
 
         # get results and return them
-        results = seqeval.compute(predictions=true_predictions, references=true_labels)
+        results = seqeval.compute(predictions=true_predictions,
+                                  references=true_labels,
+                                  zero_division=0)
 
         return {
             "precision": results["overall_precision"],

@@ -78,6 +78,33 @@ class CustomCallback(TrainerCallback):
             return control_copy
 
 
+class CustomCallbackNER(TrainerCallback):
+    """
+    To get predictions on train set at end of each epoch
+    In order to print training curve + loss over epochs
+    https://discuss.huggingface.co/t/metrics-for-training-set-in-trainer/2461/5
+    """
+
+    def __init__(self, trainer) -> None:
+        super().__init__()
+        self._trainer = trainer
+
+    def on_epoch_end(self, args, state, control, **kwargs):
+        if control.should_evaluate:
+            control_copy = deepcopy(control)
+            train_set_results = self._trainer.evaluate(
+                eval_dataset=self._trainer.train_dataset, metric_key_prefix="train"
+            )
+            dev_set_results = self._trainer.evaluate(
+                eval_dataset=self._trainer.eval_dataset, metric_key_prefix="eval"
+            )
+
+            logging.info(train_set_results)
+            logging.info(dev_set_results)
+
+            return control_copy
+
+
 def optuna_hp_space(trial):
     """
     Get a hyperparameter space for optuna backend to use with a
