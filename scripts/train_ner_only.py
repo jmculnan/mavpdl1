@@ -2,7 +2,6 @@
 
 # IMPORT STATEMENTS
 import evaluate
-import numpy as np
 import pandas as pd
 import torch
 import logging
@@ -10,9 +9,7 @@ import logging
 from transformers import Trainer, DataCollatorForTokenClassification
 from datasets import Dataset
 
-from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split, KFold
-
 from sklearn.metrics import confusion_matrix
 
 from seqeval.metrics import classification_report
@@ -21,11 +18,10 @@ from config import train_config as config
 
 # from other modules here
 from mavpdl1.utils.utils import (
-    get_tokenizer,
-    tokenize_label_data,
     get_from_indexes,
     CustomCallback,
     id_labeled_items,
+    optuna_hp_space
 )
 from mavpdl1.preprocessing.data_preprocessing import PDL1Data
 from mavpdl1.model.ner_model import BERTNER
@@ -38,29 +34,17 @@ if __name__ == "__main__":
     # PREPARE DATA
     # ---------------------------------------------------------
     # use deidentified data sample
-    data = PDL1Data(config.dataset_location)
-    all_data = data.data
-
-    # get label sets
-    # label set for test results is just O, B-result, I-result
-    label_set_results = ["O", "B-result", "I-result"]
-    # # label set for vendor and unit
-    label_set_vendor_unit = np.concatenate(
-        (
-            all_data["TEST"].dropna().unique(),
-            all_data["UNIT"].dropna().unique(),
-            np.array(["UNK_TEST", "UNK_UNIT"]),
-        )
+    pdl1 = PDL1Data(
+        config.dataset_location,
+        model=config.model,
+        ner_classes=["unit"],
+        classification_classes=["test"],
+        classification_type="multilabel",
     )
-
-    # encoders for the labels
-    label_enc_results = LabelEncoder().fit(label_set_results)
-
-    # get tokenizer
-    tokenizer = get_tokenizer(config.model)
+    all_data = pdl1.data
 
     # get tokenized data and IOB-2 gold labeled data
-    tokenized, gold, sids = tokenize_label_data(tokenizer, all_data, label_enc_results)
+    tokenized, gold= pdl1.tokenize_label_data()
 
     # convert data to train, dev, and test
     # percentage breakdown and code formatting from Kyle code
@@ -69,26 +53,14 @@ if __name__ == "__main__":
         X_test,
         y_train_full,
         y_test,
-        ids_train_full,
-        ids_test,
     ) = train_test_split(
-        tokenized, gold, sids, test_size=0.15, random_state=config.seed
+        tokenized, gold, test_size=0.15, random_state=config.seed
     )
-
-    # tokenize function for dataset mapping
-    def tokize(text):
-        return tokenizer(
-            text["texts"],
-            truncation=True,
-            padding="max_length",
-            max_length=512,
-            return_tensors="pt",
-        )
 
     # generate the test dataset if needed
     # train and val done below due to nature of the tasks
-    test_dataset = Dataset.from_dict({"texts": X_test, "TIUDocumentSID": ids_test})
-    test_dataset = test_dataset.map(tokize, batched=True)
+    test_dataset = Dataset.from_dict({"texts": X_test, "label": y_test})
+    test_dataset = test_dataset.map(pdl1.tokenize, batched=True)
 
     # convert train data into KFold splits
     splits = config.ner_num_splits
@@ -105,19 +77,18 @@ if __name__ == "__main__":
 
         X_train, X_val = get_from_indexes(X_train_full, train_index, test_index)
         y_train, y_val = get_from_indexes(y_train_full, train_index, test_index)
-        ids_train, ids_val = get_from_indexes(ids_train_full, train_index, test_index)
 
         # todo: kyle code used `label` but on CPU would not train
         #   unless i changed it to `labels`
         train_dataset = Dataset.from_dict(
-            {"texts": X_train, "labels": y_train, "TIUDocumentSID": ids_train}
+            {"texts": X_train, "labels": y_train}
         )
-        train_dataset = train_dataset.map(tokize, batched=True)
+        train_dataset = train_dataset.map(pdl1.tokenize, batched=True)
 
         val_dataset = Dataset.from_dict(
-            {"texts": X_val, "labels": y_val, "TIUDocumentSID": ids_val}
+            {"texts": X_val, "labels": y_val}
         )
-        val_dataset = val_dataset.map(tokize, batched=True)
+        val_dataset = val_dataset.map(pdl1.tokenize, batched=True)
 
         # TRAIN THE MODEL
         # ---------------------------------------------------------
@@ -127,11 +98,11 @@ if __name__ == "__main__":
         #   and use those in the classification task
 
         # PART 1
-        ner = BERTNER(config, label_enc_results, tokenizer)
+        ner = BERTNER(config, pdl1.ner_encoder, pdl1.tokenizer)
 
         # add data collator
         data_collator = DataCollatorForTokenClassification(
-            tokenizer, padding=True, return_tensors="pt"
+            pdl1.tokenizer, padding=True, return_tensors="pt"
         )
 
         ner.update_save_path(f"{config.savepath}/ner/fold_{i}")
@@ -161,18 +132,17 @@ if __name__ == "__main__":
         # define a second computation
         all_labeled_ids = id_labeled_items(
             y_pred.predictions,
-            val_dataset["TIUDocumentSID"],
-            label_enc_results.transform(["O"]),
+            val_dataset["texts"],
+            pdl1.ner_encoder.transform(["O"]),
         )
         all_labeled.extend(all_labeled_ids)
 
         predictions = torch.argmax(torch.from_numpy(y_pred.predictions), dim=2)
         labels = [list(map(int, label)) for label in val_dataset["labels"]]
 
-        true_labels = [label_enc_results.inverse_transform(label) for label in labels]
+        true_labels = [pdl1.ner_encoder.inverse_transform(label) for label in labels]
         true_predictions = [
-            label_enc_results.inverse_transform(prediction)
-            for prediction in predictions
+            pdl1.ner_encoder.inverse_transform(prediction) for prediction in predictions
         ]
 
         true_predictions = list(map(list, true_predictions))
@@ -185,12 +155,12 @@ if __name__ == "__main__":
         logging.info(confusion_matrix(labels_for_confusion, preds_for_confusion))
 
         report = classification_report(true_labels, true_predictions, digits=2)
-        logging.info(label_enc_results.classes_)
+        logging.info(pdl1.ner_encoder.classes_)
 
         logging.info(report)
 
     # save the list of all documents containing PD-L1 values according to the model
-    labeled_df = pd.DataFrame(all_labeled, columns=["TIUDocumentSID"])
+    labeled_df = pd.DataFrame(all_labeled, columns=["CANDIDATE"])
     labeled_df.to_csv(
         f"{config.savepath}/all_documents_with_IDed_pdl1_values.csv", index=False
     )

@@ -21,7 +21,7 @@ class BERTNER:
         self.model.resize_token_embeddings(len(tokenizer))
 
         # put device on gpu or cpu
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "mps")
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "mps")
         self.model.to(self.device)
 
         # set tokenizer
@@ -36,8 +36,8 @@ class BERTNER:
         # set training args
         self.training_args = TrainingArguments(
             output_dir=config.savepath,
-            num_train_epochs=config.ner_num_epochs,
-            per_device_train_batch_size=config.ner_per_device_train_batch_size,
+            num_train_epochs=config.ner_num_epochs[0],
+            per_device_train_batch_size=config.ner_per_device_train_batch_size[0],
             per_device_eval_batch_size=config.ner_per_device_eval_batch_size,
             evaluation_strategy=config.evaluation_strategy,
             save_strategy=config.save_strategy,
@@ -51,6 +51,18 @@ class BERTNER:
             weight_decay=config.ner_weight_decay,
             use_mps_device=True if self.device == torch.device("mps") else False,
         )
+
+        self.best_hyperparameters = None
+
+    def reinit_model(self):
+        self.model = BertForTokenClassification.from_pretrained(
+            self.config.model,
+            num_labels=len(self.label_encoder.classes_),
+        )
+        # resize the model bc we added emebeddings to the tokenizer
+        self.model.resize_token_embeddings(len(self.tokenizer))
+
+        return self.model
 
     def compute_metrics(self, pred_targets):
         """
@@ -73,11 +85,9 @@ class BERTNER:
         true_labels = [self.label_encoder.inverse_transform(label) for label in targets]
 
         # get results and return them
-        results = seqeval.compute(predictions=true_predictions, references=true_labels)
-
-        # todo: this doesn't indicate whether you're getting results on
-        #   train or evaluation data -- will need to alter
-        logging.info(results)
+        results = seqeval.compute(predictions=true_predictions,
+                                  references=true_labels,
+                                  zero_division=0)
 
         return {
             "precision": results["overall_precision"],
@@ -85,6 +95,31 @@ class BERTNER:
             "f1": results["overall_f1"],
             "accuracy": results["overall_accuracy"],
         }
+
+    def load_best_hyperparameters(self, best_hyperparams):
+        """
+        After performing hyperparameter search with optuna,
+        take the best hyperparams and update the trainingargs
+        to reflect them
+        :param best_hyperparams:
+        :return:
+        """
+        for param in best_hyperparams.keys():
+            try:
+                self.training_args.param = best_hyperparams[param]
+            except KeyError:
+                logging.error(f"Unknown hyperparameter {param} listed")
+
+    def load_new_hyperparameters(self, best_hyperparams):
+        self.load_best_hyperparameters(best_hyperparams)
+
+    def save_best_hyperparameters(self, best_hyperparams):
+        """
+        To manually save the best hyperparameters for later loading
+        :param best_hyperparams:
+        :return:
+        """
+        self.best_hyperparameters = best_hyperparams
 
     def update_save_path(self, new_path):
         self.training_args.output_dir = new_path

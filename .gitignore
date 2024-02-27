@@ -10,3 +10,6 @@ src/mavpdl1.egg-info
 # pycharm
 .idea/
 .DS_Store
+
+# pycache
+__pycache__/

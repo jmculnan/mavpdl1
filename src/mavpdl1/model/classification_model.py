@@ -4,7 +4,11 @@ import numpy as np
 import logging
 
 from sklearn.metrics import precision_recall_fscore_support, accuracy_score
-from transformers import TrainingArguments, BertForSequenceClassification
+from transformers import (
+    TrainingArguments,
+    BertForSequenceClassification,
+    BertForTokenClassification,
+)
 
 
 class BERTTextMultilabelClassifier:
@@ -27,7 +31,7 @@ class BERTTextMultilabelClassifier:
         self.model.resize_token_embeddings(len(tokenizer))
 
         # put device on gpu or cpu
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "mps")
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "mps")
         self.model.to(self.device)
 
         # set tokenizer
@@ -96,3 +100,101 @@ class BERTTextMultilabelClassifier:
             "f1": results[2],
             "accuracy": accuracy,
         }
+
+
+class BERTTextSinglelabelClassifier:
+    """
+    A BERT-based document-level single-task, single-label classifier
+    """
+
+    def __init__(self, config, label_encoder, tokenizer, model=None):
+        # we may want to be able to provide a model we've been training with
+        # as part of a longer training procedure
+        if model:
+            self.model = model
+        else:
+            self.model = BertForSequenceClassification.from_pretrained(
+                config.model,
+                num_labels=len(label_encoder.classes_),
+            )
+        # resize the model bc we added emebeddings to the tokenizer
+        self.model.resize_token_embeddings(len(tokenizer))
+
+        # save config
+        self.config = config
+
+        # put device on gpu or cpu
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "mps")
+        self.model.to(self.device)
+
+        # set tokenizer
+        self.tokenizer = tokenizer
+
+        # set label encoder
+        self.label_encoder = label_encoder
+
+        # set training args
+        self.training_args = TrainingArguments(
+            output_dir=f"{config.savepath}/classifier",
+            num_train_epochs=config.cls_num_epochs[0],
+            per_device_train_batch_size=config.cls_per_device_train_batch_size[0],
+            per_device_eval_batch_size=config.cls_per_device_eval_batch_size,
+            evaluation_strategy=config.evaluation_strategy,
+            save_strategy=config.save_strategy,
+            load_best_model_at_end=config.load_best_model_at_end,
+            warmup_steps=config.warmup_steps,
+            logging_dir=config.cls_logging_dir,
+            dataloader_pin_memory=config.dataloader_pin_memory,
+            metric_for_best_model=config.metric_for_best_model,
+            weight_decay=config.cls_weight_decay,
+            use_mps_device=True if self.device == torch.device("mps") else False,
+        )
+
+    def reinit_model(self):
+        self.model = BertForSequenceClassification.from_pretrained(
+            self.config.model,
+            num_labels=len(self.label_encoder.classes_),
+        )
+        # resize the model bc we added emebeddings to the tokenizer
+        self.model.resize_token_embeddings(len(self.tokenizer))
+
+        return self.model
+
+    def compute_metrics(self, pred_targets):
+        """
+        :param pred_targets: An instance of class transformers.EvalPrediction;
+            consists of an np.ndarray of predictions, an np.ndarray of targets,
+            and an optional np.ndarray of inputs
+        :return: precision, recall, f1, accuracy
+        """
+        predictions, targets = pred_targets
+        preds = torch.argmax(torch.Tensor(predictions), dim=1)
+
+        # calculate precision, recall, f1, support
+        # selected macro f1 for imbalanced classes
+        # can change as needed
+        results = precision_recall_fscore_support(
+            targets, preds, average="macro", zero_division=0.0
+        )
+        accuracy = accuracy_score(targets, preds)
+
+        return {
+            "precision": results[0],
+            "recall": results[1],
+            "f1": results[2],
+            "accuracy": accuracy,
+        }
+
+    def load_best_hyperparameters(self, best_hyperparams):
+        """
+        After performing hyperparameter search with optuna,
+        take the best hyperparams and update the trainingargs
+        to reflect them
+        :param best_hyperparams:
+        :return:
+        """
+        for param in best_hyperparams.keys():
+            try:
+                self.training_args.param = best_hyperparams[param]
+            except KeyError:
+                logging.error(f"Unknown hyperparameter {param} listed")
