@@ -1,36 +1,55 @@
-# train an NER model
+# train an NER model, using hyperparameter tuning on each stage of the model
 
 # IMPORT STATEMENTS
 import evaluate
-import pandas as pd
 import numpy as np
-import torch
 import logging
+import torch
 import random
 
-from transformers import Trainer, DataCollatorForTokenClassification
+from transformers import (
+    Trainer,
+    DataCollatorForTokenClassification,
+)
 from datasets import Dataset
 
 from sklearn.model_selection import train_test_split, KFold
-from sklearn.metrics import confusion_matrix
-
-from seqeval.metrics import classification_report
+from sklearn.metrics import confusion_matrix, classification_report
+from seqeval.metrics import classification_report as ner_classification_report
 
 from config import train_config as config
 
 # from other modules here
 from mavpdl1.utils.utils import (
+    id_labeled_items,
     get_from_indexes,
+    condense_df,
+    CustomCallback,
     CustomCallbackNER,
     id_labeled_items,
     calc_best_hyperparams
 )
-
 from mavpdl1.preprocessing.data_preprocessing import PDL1Data
 from mavpdl1.model.ner_model import BERTNER
+from mavpdl1.model.classification_model import BERTTextSinglelabelClassifier
 
 # load seqeval in evaluate
 seqeval = evaluate.load("seqeval")
+
+
+def compute_objective(metrics):
+    return metrics['eval_f1']
+
+
+# set optuna hyperparameter space
+def optuna_hp_space(trial):
+    return {
+        "learning_rate": trial.suggest_float("learning_rate", config.cls_lr_min, config.cls_lr_max, log=True),
+        "per_device_train_batch_size": trial.suggest_categorical(
+            "per_device_train_batch_size",
+            config.cls_per_device_train_batch_size
+        ),
+        "num_train_epochs": trial.suggest_categorical("num_train_epochs", config.cls_num_epochs)}
 
 
 if __name__ == "__main__":
@@ -62,7 +81,7 @@ if __name__ == "__main__":
 
     # generate the test dataset if needed
     # train and val done below due to nature of the tasks
-    test_dataset = Dataset.from_dict({"texts": X_test, "label": y_test})
+    test_dataset = Dataset.from_dict({"texts": X_test, "labels": y_test})
     test_dataset = test_dataset.map(pdl1.tokenize, batched=True)
 
     # convert train data into KFold splits
@@ -104,7 +123,7 @@ if __name__ == "__main__":
 
         # set datasets for the outer loop
         train_dataset_outer = Dataset.from_dict(
-            {"texts": X_train, "labels":y_train}
+            {"texts": X_train, "labels": y_train}
         )
         train_dataset_outer = train_dataset_outer.map(pdl1.tokenize, batched=True)
 
@@ -197,6 +216,8 @@ if __name__ == "__main__":
                 preds = trainer.predict(val_dataset_inner).predictions
                 all_preds.extend(preds)
                 all_ys.extend(val_dataset_inner["labels"])
+
+                del trainer
 
             # get predictions on all partitions of inner loop
             # used to determine which hyperparameters are best
@@ -297,6 +318,9 @@ if __name__ == "__main__":
 
         # IDENTIFY ALL SAMPLES THAT WILL MOVE ON TO BE USED AS INPUT WITH NEXT MODEL
         # define a second computation
+        logging.info(
+            f"Identifying all data points with PDL1 values in validation set for fold {i}:"
+        )
         all_labeled_ids = id_labeled_items(
             y_pred.predictions,
             val_dataset["texts"],
@@ -304,31 +328,164 @@ if __name__ == "__main__":
         )
         all_labeled.extend(all_labeled_ids)
 
-        predictions = torch.argmax(torch.from_numpy(y_pred.predictions), dim=2)
-        labels = [list(map(int, label)) for label in val_dataset["labels"]]
+    # print(all_labeled)
+    logging.info("CV WITH NER MODEL COMPLETE. NOW BEGINNING CLASSIFICATION TASK")
+    # PART 2
+    # USE THE IDENTIFIED PD-L1 INPUTS TO TRAIN A CLASSIFIER TO GET
+    # VENDOR AND UNIT INFORMATION FROM THESE SAMPLES, WHEN AVAILABLE
+    logging.info("Instantiating classifier")
+    classifier = BERTTextSinglelabelClassifier(config, pdl1.cls_encoder, pdl1.tokenizer)
 
-        true_labels = [pdl1.ner_encoder.inverse_transform(label) for label in labels]
-        true_predictions = [
-            pdl1.ner_encoder.inverse_transform(prediction) for prediction in predictions
-        ]
+    # get the labeled data for train and dev partition
+    # test partition already generated above
+    train_ids, val_ids = train_test_split(
+        all_labeled, test_size=0.25, random_state=config.seed
+    )
 
-        true_predictions = list(map(list, true_predictions))
-        true_labels = list(map(list, true_labels))
+    # get train data using train_ids
+    # set of document SIDs was passed to split earlier
+    train_df = all_data[all_data["CANDIDATE"].isin(train_ids)]
+    train_df = condense_df(train_df, pdl1.cls_encoder, gold_types="test")
 
-        preds_for_confusion = predictions.flatten().squeeze().tolist()
-        labels_for_confusion = [label for label_list in labels for label in label_list]
+    val_df = all_data[all_data["CANDIDATE"].isin(val_ids)]
+    val_df = condense_df(val_df, pdl1.cls_encoder, gold_types="test")
 
-        logging.info(f"Confusion matrix on validation set: ")
-        logging.info(confusion_matrix(labels_for_confusion, preds_for_confusion))
+    # convert to dataset
+    # for some reason here we need LABEL instead of LABELS
+    train_dataset = Dataset.from_dict(
+        {
+            "texts": train_df["CANDIDATE"].tolist(),
+            "label": train_df["GOLD"].tolist(),
+        }
+    )
+    train_dataset = train_dataset.map(pdl1.tokenize, batched=True)
 
-        report = classification_report(true_labels, true_predictions, digits=2)
-        logging.info(pdl1.ner_encoder.classes_)
+    val_dataset = Dataset.from_dict(
+        {
+            "texts": val_df["CANDIDATE"].tolist(),
+            "label": val_df["GOLD"].tolist(),
+        }
+    )
+    val_dataset = val_dataset.map(pdl1.tokenize, batched=True)
 
-        logging.info(report)
+    # instantiate trainer for hyperparameter search
+    classification_trainer = Trainer(
+        model_init=classifier.reinit_model,
+        args=classifier.training_args,
+        train_dataset=train_dataset,
+        eval_dataset=val_dataset,
+        compute_metrics=classifier.compute_metrics,
+    )
+    # add callback to print train compute_metrics for train set
+    # in addition to val set
+    classification_trainer.add_callback(CustomCallback(classification_trainer))
 
-    # save the list of all documents containing PD-L1 values according to the model
-    if config.save_ner_predicted_items_df:
-        labeled_df = pd.DataFrame(all_labeled, columns=["CANDIDATE"])
-        labeled_df.to_csv(
-            f"{config.savepath}/all_documents_with_IDed_pdl1_values.csv", index=False
+    # train the model
+    logging.info("Beginning training for classification")
+    logging.info("Hyperparameter search! ")
+    classification_metrics = classification_trainer.hyperparameter_search(
+        direction="maximize",
+        backend="optuna",
+        hp_space=optuna_hp_space,
+        n_trials=5,
+        compute_objective=compute_objective
+    )
+    logging.info("Best model parameters from hyperparameter search:")
+    logging.info(classification_metrics)
+
+    # retrain the best model parameters
+    # todo: it would be better to load the best model directly
+    logging.info("About to retrain model using best hyperparameters")
+    classifier.load_best_hyperparameters(classification_metrics.hyperparameters)
+
+    best_cls_trainer = Trainer(
+        model=classifier.model,
+        args=classifier.training_args,
+        train_dataset=train_dataset,
+        eval_dataset=val_dataset,
+        compute_metrics=classifier.compute_metrics
+    )
+
+    trained = best_cls_trainer.train()
+    logging.info("Model retrained on best hyperparameters.")
+
+    metrics = trained.metrics
+
+    logging.info("Results of our model on the validation dataset: ")
+    # look at best model performance on validation dataset
+    y_pred = best_cls_trainer.predict(val_dataset)
+    preds = torch.argmax(torch.Tensor(y_pred.predictions), dim=1)
+
+    labels = val_dataset["label"]
+
+    # get confusion matrix
+    logging.info(f"Confusion matrix on validation set: ")
+    logging.info(confusion_matrix(labels, preds))
+
+    # get classification report on val set
+    logging.info(f"Classification report on validation set: ")
+    logging.info(
+        classification_report(
+            labels,
+            preds,
+            labels=np.array([i for i in range(len(pdl1.cls_encoder.classes_))]),
+            target_names=pdl1.cls_encoder.classes_,
+            zero_division=0.0,
+        )
+    )
+
+    logging.info("TRAINING ON NER MODEL AND CLASSIFIER COMPLETE.")
+
+    # optional step to run inference on test set at the end of training
+    if config.evaluate_on_test_set:
+        logging.info("evaluate_on_test_set is set to true. Running inference on test set.")
+        # warning: this doesn't use VERY best model from CV for NER
+        #   only best model from last fold of CV
+        #   to run on very best model, use inference.py
+        logging.info("RESULTS OF NER ON TEST PARTITION:")
+        logging.info("BEST NER TRAINER ARGS:")
+        logging.info(best_ner_trainer.args)
+        logging.info("Now predicting on best ner trainer")
+        test_results = best_ner_trainer.predict(test_dataset)
+
+        # get only the items that were IDed as containing PD-L1 value
+        logging.info("Now selecting only items with PDL1 value IDed by NER trainer")
+        test_labeled_ids = id_labeled_items(
+            test_results.predictions,
+            test_dataset["texts"],
+            pdl1.ner_encoder.transform(["O"]),
+        )
+
+        # subset the original dataframe with these SIDs
+        logging.info("Subsetting original dataframe using only these IDed test items")
+        test_df = all_data[all_data["CANDIDATE"].isin(test_labeled_ids)]
+        test_df = condense_df(test_df, pdl1.cls_encoder, gold_types="test")
+
+        new_test_dataset = Dataset.from_dict(
+            {
+                "texts": test_df["CANDIDATE"].tolist(),
+                "label": test_df["GOLD"].tolist(),
+            }
+        )
+        new_test_dataset = new_test_dataset.map(pdl1.tokenize, batched=True)
+
+        logging.info("RESULTS OF CLASSIFICATION ON TEST DATA IDed IN STEP 1")
+        cls_test_results = best_cls_trainer.predict(new_test_dataset)
+        preds = torch.argmax(torch.Tensor(cls_test_results.predictions), dim=1)
+        labels = new_test_dataset["label"]
+
+        # get confusion matrix
+        logging.info(f"Confusion matrix on test set: ")
+        logging.info(confusion_matrix(labels, preds))
+
+        # get classification report on val set
+        logging.info(f"Classification report on test set: ")
+        logging.info(
+            classification_report(
+                labels,
+                preds,
+                labels=np.array([i for i in range(len(pdl1.cls_encoder.classes_))]),
+                target_names=pdl1.cls_encoder.classes_,
+                zero_division=0.0,
+            )
         )

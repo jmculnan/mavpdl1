@@ -17,7 +17,7 @@ save_plots = True
 # whether to save the trained model
 save_model = True
 # whether to evaluate on the test set at end of training
-evaluate_on_test_set = False
+evaluate_on_test_set = True
 
 # set output info
 outname = "first_file"
