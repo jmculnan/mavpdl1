@@ -61,7 +61,7 @@ if __name__ == "__main__":
 
     # generate the test dataset if needed
     # train and val done below due to nature of the tasks
-    test_dataset = Dataset.from_dict({"texts": X_test, "label": y_test})
+    test_dataset = Dataset.from_dict({"texts": X_test, "labels": y_test})
     test_dataset = test_dataset.map(pdl1.tokenize, batched=True)
 
     # convert train data into KFold splits
@@ -258,7 +258,7 @@ if __name__ == "__main__":
         print("RESULTS OF CLASSIFICATION ON TEST DATA IDed IN STEP 1")
         cls_test_results = classification_trainer.predict(new_test_dataset)
 
-        preds = torch.argmax(torch.Tensor(y_pred.predictions), dim=1)
+        preds = torch.argmax(torch.Tensor(cls_test_results.predictions), dim=1)
         labels = new_test_dataset["label"]
 
         # get confusion matrix
